@@ -44,12 +44,36 @@ const AI_LV = [
 const AI_MAX = AI_LV.length - 1;                              // 最大 Lv5
 const UNLOCK2_COST = 10000;                                   // 変換装置2の解放にかかる ai
 const UPGRADE2_COST = [20000, 40000, 80000, 160000, 320000];  // 変換装置2の強化にかかる ai（強化すると ai は 0 に）
+// 変換装置3（ti → me 専用）。me は ti の増え方に ×(1 + me) の倍率
+const ME_LV = [
+  { cost: 1e10, gain: 1 },
+  { cost: 1.5e10, gain: 2 },
+  { cost: 2.5e10, gain: 4 },
+  { cost: 4e10, gain: 6 },
+  { cost: 6e10, gain: 8 },
+  { cost: 9e10, gain: 10 },
+];
+const ME_MAX = ME_LV.length - 1;
+const UNLOCK3_COST = 1000000;            // 変換装置3の解放にかかる ai
+const UPGRADE3_COST = [2, 4, 8, 16, 32];  // 変換装置3の強化にかかる me（強化すると me は 0 に）
+// 自動化機（ON の間、AUTO_INTERVAL 秒ごとに「まとめて」を自動でやる）
+const AUTO_COST = { 1: 25, 2: 50000 };   // ai
+const AUTO_INTERVAL = 5;
+// 眠る（転生）：この周回で SLEEP_MIN ti 消すと眠れる。夢 = floor(√(この周回の ti ÷ SLEEP_MIN))
+const SLEEP_MIN = 1e9;
 // 装置の置き場所
-const MACHINE_POS = { 1: { x: 0, z: 0 }, 2: { x: 3.4, z: 3.2 } };
+const MACHINE_POS = { 1: { x: 0, z: 0 }, 2: { x: 3.4, z: 3.2 }, 3: { x: -3.4, z: 3.2 } };
 const CONVERTER_R = 0.7;   // 変換装置の当たり判定
 const INTERACT_DIST = 1.9; // 変換装置を使える距離
 const BED = { x: -4.9, z: -4.7, w: 1.7, d: 2.5 };
 const BED_BOX = { minX: BED.x - BED.w / 2, maxX: BED.x + BED.w / 2, minZ: BED.z - BED.d / 2, maxZ: BED.z + BED.d / 2 };
+// 家具の当たり判定（箱と円）
+const TABLE = { x: 4.7, z: -4.8 }, CHAIR = { x: 3.65, z: -4.8 }, PLANT = { x: -5.4, z: 0.8, r: 0.25 };
+const BOXES = [
+  BED_BOX,
+  { minX: TABLE.x - 0.6, maxX: TABLE.x + 0.6, minZ: TABLE.z - 0.35, maxZ: TABLE.z + 0.35 },
+  { minX: CHAIR.x - 0.25, maxX: CHAIR.x + 0.25, minZ: CHAIR.z - 0.25, maxZ: CHAIR.z + 0.25 },
+];
 const ACCENT = 0xd23a2c;
 const INK = 0x141414;
 
@@ -61,7 +85,7 @@ let state = null;
 let phase = 'off';          // off | wake | play | menu（装置パネル）| paused
 let yaw = 0, pitch = 0, camY = EYE;
 const keys = {};
-let lastT = 0, saveTimer = 0, rafId = 0;
+let lastT = 0, saveTimer = 0, rafId = 0, achTimer = 0;
 let tutMoved = 0, tutLooked = 0, tutTimer = 0, tutDoneWait = 0;
 let leaving = false, dragging = false;
 // タッチ操作の状態
@@ -69,13 +93,25 @@ let lookId = null, lookX = 0, lookY = 0;
 let runToggle = false, moving = false; // スマホの「走る」ボタン（押すたびに切り替え）・いま動いているか
 let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
-const newState = () => ({ ti: 0, de: 0, ai: 0, lv: 0, c2: false, lv2: 0, tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
+const newStats = () => ({ play: 0, totalTi: 0, bestRate: 0, de: 0, ai: 0, me: 0 });
+const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
+  auto1: false, auto1On: true, auto2: false, auto2On: true,
+  yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
-const rate = () => 1 * (1 + state.de);
+// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
+const rate = () => 1 * (1 + state.de) * (1 + (state.me || 0)) * (1 + (state.yume || 0));
+// 眠ったときにもらえる夢
+const yumeGain = () => Math.floor(Math.sqrt((state.runTi || 0) / SLEEP_MIN));
 // いまの変換装置1の性能
 const conv = () => CONV_LV[Math.min(state.lv || 0, CONV_MAX)];
 // いまの変換装置2の性能（解放前は装置1のパネルで Lv0 の性能で作れる）
 const conv2 = () => AI_LV[Math.min(state.lv2 || 0, AI_MAX)];
+const conv3 = () => ME_LV[Math.min(state.lv3 || 0, ME_MAX)];
+// 変換装置2・3の設定（パネル・解放・強化を共通の関数で扱う）
+const GEN = {
+  2: { p: 'm2', unlockedKey: 'c2', lvKey: 'lv2', table: AI_LV, max: AI_MAX, unlockCost: UNLOCK2_COST, unlockUnit: 'ai', unit: 'ai', upCost: UPGRADE2_COST, upUnit: 'ai' },
+  3: { p: 'm3', unlockedKey: 'c3', lvKey: 'lv3', table: ME_LV, max: ME_MAX, unlockCost: UNLOCK3_COST, unlockUnit: 'ai', unit: 'me', upCost: UPGRADE3_COST, upUnit: 'me' },
+};
 // 装置のパネル（ai・アップグレード）はチュートリアルが終わってから
 const machineUnlocked = () => state.tut >= 6;
 
@@ -123,6 +159,8 @@ function init() {
   buildClock();
   buildMachine(1);
   buildMachine(2);
+  buildMachine(3);
+  buildProps();
 
   resize();
   addEventListener('resize', resize);
@@ -286,9 +324,10 @@ function buildMachine(id) {
   }
 
   // 中の宝石（装置1は黒の八面体、装置2は白の二十面体）
+  // 装置1は黒の八面体、装置2は白の二十面体、装置3は赤の四面体
   const gem = new THREE.Mesh(
-    id === 1 ? new THREE.OctahedronGeometry(0.17) : new THREE.IcosahedronGeometry(0.15),
-    new THREE.MeshStandardMaterial({ color: id === 1 ? INK : 0xffffff, roughness: 0.25, metalness: id === 1 ? 0.4 : 0.1 })
+    id === 1 ? new THREE.OctahedronGeometry(0.17) : id === 2 ? new THREE.IcosahedronGeometry(0.15) : new THREE.TetrahedronGeometry(0.2),
+    new THREE.MeshStandardMaterial({ color: id === 1 ? INK : id === 2 ? 0xffffff : ACCENT, roughness: 0.25, metalness: id === 1 ? 0.4 : 0.1 })
   );
   gem.position.y = 1.6;
   gem.castShadow = true;
@@ -324,7 +363,20 @@ function buildMachine(id) {
   light.position.y = 1.5;
   g.add(light);
 
-  machines[id] = { id, x, z, g, rings, ringMat, glowMat, gem, orbs, light, labelMat, pulse: 0, locked: null };
+  // 自動化機（買うと装置の横に現れる小さな黒い箱。ON の間は赤いランプが点滅）
+  let auto = null, autoLamp = null;
+  if (id <= 2) {
+    auto = new THREE.Group();
+    auto.position.set(-0.62, 0, 0);
+    add(new THREE.BoxGeometry(0.28, 0.55, 0.28), std(INK, { roughness: 0.5 }), 0, 0.275, 0, auto);
+    autoLamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 2 }));
+    autoLamp.position.y = 0.6;
+    auto.add(autoLamp);
+    auto.visible = false;
+    g.add(auto);
+  }
+
+  machines[id] = { id, x, z, g, rings, ringMat, glowMat, gem, orbs, light, labelMat, auto, autoLamp, pulse: 0, locked: null };
 }
 
 // 装置2：ロック中は灰色・光らない、解放すると赤く光る
@@ -340,6 +392,318 @@ function setMachineLocked(m, locked) {
   m.labelMat.map = floorLabel(locked ? `CONVERTER 0${m.id}  LOCKED` : `CONVERTER 0${m.id}`, locked ? '#888888' : '#141414');
   m.labelMat.needsUpdate = true;
 }
+
+// ===== 家具（調べられる物）と、進めると現れる物 =====
+const props = {};
+function buildProps() {
+  const white = std(0xffffff), ink = std(INK, { roughness: 0.5 });
+  // テーブルとノート（右奥の角）
+  const table = new THREE.Group();
+  table.position.set(TABLE.x, 0, TABLE.z);
+  scene.add(table);
+  add(new THREE.BoxGeometry(1.2, 0.05, 0.7), white, 0, 0.75, 0, table);
+  for (const [lx, lz] of [[-0.55, -0.3], [0.55, -0.3], [-0.55, 0.3], [0.55, 0.3]]) add(new THREE.BoxGeometry(0.04, 0.75, 0.04), ink, lx, 0.375, lz, table);
+  add(new THREE.BoxGeometry(0.32, 0.025, 0.24), ink, 0.15, 0.79, 0.05, table);
+  add(new THREE.BoxGeometry(0.3, 0.01, 0.22), white, 0.15, 0.805, 0.05, table);
+  // 椅子（テーブルの左）
+  const chair = new THREE.Group();
+  chair.position.set(CHAIR.x, 0, CHAIR.z);
+  scene.add(chair);
+  add(new THREE.BoxGeometry(0.45, 0.05, 0.45), white, 0, 0.46, 0, chair);
+  for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) add(new THREE.BoxGeometry(0.035, 0.46, 0.035), ink, lx, 0.23, lz, chair);
+  add(new THREE.BoxGeometry(0.04, 0.5, 0.45), white, -0.21, 0.72, 0, chair);
+  // 植木鉢（左の壁ぎわ）。眠ったことがあると赤い花が咲く
+  const plant = new THREE.Group();
+  plant.position.set(PLANT.x, 0, PLANT.z);
+  scene.add(plant);
+  add(new THREE.CylinderGeometry(0.22, 0.16, 0.36, 32), white, 0, 0.18, 0, plant);
+  add(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 8), ink, 0, 0.8, 0, plant);
+  for (let i = 0; i < 4; i++) {
+    const leaf = add(new THREE.BoxGeometry(0.28, 0.015, 0.08), ink, 0, 0.55 + i * 0.16, 0, plant);
+    leaf.rotation.y = i * 1.3;
+    leaf.rotation.z = 0.35;
+    leaf.position.x = Math.cos(i * 1.3) * 0.12;
+    leaf.position.z = -Math.sin(i * 1.3) * 0.12;
+  }
+  props.flower = add(new THREE.SphereGeometry(0.07, 16, 12), new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 0.4 }), 0, 1.27, 0, plant);
+  // 額縁（左の壁。中は真っ白）
+  add(new THREE.BoxGeometry(0.04, 0.95, 1.25), ink, -HALF + 0.02, 2.1, -1.6);
+  add(new THREE.BoxGeometry(0.045, 0.83, 1.13), white, -HALF + 0.03, 2.1, -1.6);
+  // コンセント（右の壁の下）
+  add(new THREE.BoxGeometry(0.02, 0.13, 0.09), white, HALF - 0.01, 0.3, 0.6);
+  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 0.58);
+  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 0.62);
+
+  // 進めると現れる物 ----------------------------------------------------
+  // 壁のひび（奥の壁。はじめて ai を作ると現れる）
+  const pts = [[-2.4, 3.4], [-2.1, 3.0], [-2.25, 2.7], [-1.85, 2.35], [-1.95, 2.05], [-1.6, 1.75]].map(([x, y]) => new THREE.Vector3(x, y, -HALF + 0.015));
+  props.crack = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: INK }));
+  const branch = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pts[2], new THREE.Vector3(-2.55, 2.45, -HALF + 0.015)]), new THREE.LineBasicMaterial({ color: INK }));
+  props.crack.add(branch);
+  scene.add(props.crack);
+  // 2つ目の時計（左の壁。変換装置2を解放すると現れる。こっちはすごく速く進む）
+  const c2 = new THREE.Group();
+  c2.position.set(-HALF + 0.02, 2.6, 3.0);
+  c2.rotation.y = Math.PI / 2;
+  scene.add(c2);
+  c2.add(new THREE.Mesh(new THREE.CircleGeometry(0.42, 48), white));
+  c2.add(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.025, 10, 48), ink));
+  const hand2 = (w, len, z, mat) => {
+    const pv = new THREE.Group();
+    pv.position.z = z;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, 0.01), mat);
+    m.position.y = len / 2 - 0.04;
+    pv.add(m);
+    c2.add(pv);
+    return pv;
+  };
+  props.c2min = hand2(0.03, 0.32, 0.02, ink);
+  props.c2sec = hand2(0.01, 0.38, 0.03, std(ACCENT));
+  props.clock2 = c2;
+  // ドア（右の壁。変換装置3を解放すると現れる。取っ手がない）
+  const door = new THREE.Group();
+  door.position.set(HALF - 0.03, 0, -1.8);
+  scene.add(door);
+  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(0xebebe9), 0, 1.075, 0, door);
+  for (const [w, h, y, z] of [[0.05, 2.2, 1.1, -0.52], [0.05, 2.2, 1.1, 0.52], [0.05, 0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), ink, -0.005, y, z, door);
+  props.door = door;
+}
+
+// 進み具合に合わせて部屋を変える（毎フレーム）
+function updateRoom(t) {
+  const st = state.st || {};
+  props.crack.visible = (st.ai || 0) > 0 || state.c2;
+  props.clock2.visible = !!state.c2;
+  props.door.visible = !!state.c3;
+  props.flower.visible = (state.sleeps || 0) > 0;
+  props.c2sec.rotation.z = -(t / 6) * Math.PI * 2;
+  props.c2min.rotation.z = -(t / 360) * Math.PI * 2;
+}
+
+// ===== 調べられる物（E で一言メッセージ） =====
+const hms = (sec) => {
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s2 = sec % 60;
+  return (h ? `${h}時間` : '') + `${m}分${s2}秒`;
+};
+const EXAMS = [
+  { id: 'clock', name: '時計', x: 2, z: -5.3, show: () => true, msgs: () => [
+    `プレイ時間 ${hms(state.st.play)}。`,
+    `これまでに消した ti は ${fmt(state.st.totalTi)}。`,
+    '針が逆向きに回っている。',
+  ] },
+  { id: 'bed', name: 'ベッド', x: -3.6, z: -4.7, show: () => true, msgs: () => [
+    'ここで目が覚めた。',
+    'まだ少し温かい。',
+    state.tut >= 6 && yumeGain() >= 1 ? '今なら、眠れば全部消せる気がする。（F で眠る）' : 'まだ眠くない。',
+  ] },
+  { id: 'note', name: 'ノート', x: 4.6, z: -4.0, show: () => true, msgs: () => [
+    '真っ白なノート。何も書かれていない。',
+    '最後のページに、小さく「ti」とだけ書いてある。',
+    'めくるたびに、白いページが増えている気がする。',
+  ] },
+  { id: 'chair', name: '椅子', x: 3.65, z: -4.0, show: () => true, msgs: () => [
+    '座るにはちょっと硬そう。',
+    '誰かが座っていた跡はない。',
+  ] },
+  { id: 'plant', name: '植木鉢', x: -4.7, z: 0.8, show: () => true, msgs: () => (state.sleeps > 0
+    ? ['赤い花が咲いている。眠っている間に咲いたらしい。', '白い鉢に、黒い茎。花だけが赤い。']
+    : ['白い鉢に、黒い茎だけの植物。', '水をあげる方法がない。']) },
+  { id: 'frame', name: '額縁', x: -5.2, z: -1.6, show: () => true, msgs: () => [
+    '何も描かれていない額縁。',
+    'じっと見ていると、少しだけ白さが違う気がする。',
+  ] },
+  { id: 'outlet', name: 'コンセント', x: 5.3, z: 0.6, show: () => true, msgs: () => [
+    'コンセント。何もささっていない。',
+    'この部屋の装置は、どこから電気をもらっているんだろう。',
+  ] },
+  { id: 'crack', name: '壁のひび', x: -2.0, z: -5.3, show: () => props.crack.visible, msgs: () => [
+    '壁にひびが入っている。さっきまでなかった気がする。',
+    'ひびの向こうも、白い。',
+  ] },
+  { id: 'clock2', name: '2つ目の時計', x: -5.3, z: 3.0, show: () => props.clock2.visible, msgs: () => [
+    'いつの間にか、時計が増えている。',
+    'こっちはすごい速さで進んでいる。',
+  ] },
+  { id: 'door', name: 'ドア', x: 5.3, z: -1.8, show: () => props.door.visible, msgs: () => [
+    '取っ手のないドア。',
+    '押しても引いても動かない。',
+    'ドアの向こうから、時計の音が聞こえる気がする。',
+  ] },
+];
+const EXAM_BASE = ['clock', 'bed', 'note', 'chair', 'plant', 'frame', 'outlet'];
+const examIdx = {};
+// いちばん近くて、だいたい前にある「調べられる物」
+function nearExam() {
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let best = null, bestD = 1.7;
+  for (const e of EXAMS) {
+    if (!e.show()) continue;
+    const dx = e.x - state.x, dz = e.z - state.z, d = Math.hypot(dx, dz);
+    if (d > bestD) continue;
+    if (d > 0.6 && (dx * fx + dz * fz) / d < 0.2) continue; // 背中側は調べない
+    best = e; bestD = d;
+  }
+  return best;
+}
+let msgTimer = 0;
+function examine(e) {
+  const list = e.msgs();
+  const i = (examIdx[e.id] || 0) % list.length;
+  examIdx[e.id] = i + 1;
+  if (!state.seen.includes(e.id)) state.seen.push(e.id);
+  showMsg(e.name, list[i]);
+  Sound.play('look');
+}
+function showMsg(name, text) {
+  $('msgName').textContent = name;
+  $('msgText').textContent = text;
+  const m = $('msg');
+  m.classList.remove('show');
+  void m.offsetWidth;
+  m.classList.add('show');
+  msgTimer = 4.5;
+}
+
+// ===== 実績 =====
+const ACH = [
+  { id: 'de1', name: 'はじめての de', desc: 'de を作る', ok: (s) => s.st.de >= 1 },
+  { id: 'de1k', name: 'de コレクター', desc: 'de を合計 1,000 作る', ok: (s) => s.st.de >= 1000 },
+  { id: 'ai1', name: 'はじめての ai', desc: 'ai を作る', ok: (s) => s.st.ai >= 1 },
+  { id: 'lv1max', name: '変換装置1 MAX', desc: '変換装置1を Lv5 にする', ok: (s) => s.lv >= CONV_MAX },
+  { id: 'c2', name: '2台目', desc: '変換装置2を解放する', ok: (s) => s.c2 },
+  { id: 'lv2max', name: '変換装置2 MAX', desc: '変換装置2を Lv5 にする', ok: (s) => s.lv2 >= AI_MAX },
+  { id: 'c3', name: '3台目', desc: '変換装置3を解放する', ok: (s) => s.c3 },
+  { id: 'me1', name: 'はじめての me', desc: 'me を作る', ok: (s) => s.st.me >= 1 },
+  { id: 'auto', name: 'おまかせ', desc: '自動化機を買う', ok: (s) => s.auto1 || s.auto2 },
+  { id: 'ti1m', name: '100万', desc: 'ti を合計 100万 消す', ok: (s) => s.st.totalTi >= 1e6 },
+  { id: 'ti1b', name: '10億', desc: 'ti を合計 10億 消す', ok: (s) => s.st.totalTi >= 1e9 },
+  { id: 'ti1t', name: '1兆', desc: 'ti を合計 1兆 消す', ok: (s) => s.st.totalTi >= 1e12 },
+  { id: 'sleep1', name: 'おやすみ', desc: 'はじめて眠る', ok: (s) => s.sleeps >= 1 },
+  { id: 'sleep5', name: 'よく眠る', desc: '5回眠る', ok: (s) => s.sleeps >= 5 },
+  { id: 'look', name: '観察', desc: '部屋の物を全部調べる', ok: (s) => EXAM_BASE.every((id) => s.seen.includes(id)) },
+  { id: 'hour', name: '1時間', desc: '合計 1時間 遊ぶ', ok: (s) => s.st.play >= 3600 },
+];
+function checkAch() {
+  for (const a of ACH) {
+    if (state.ach.includes(a.id) || !a.ok(state)) continue;
+    state.ach.push(a.id);
+    toast(`実績：${a.name}`);
+    Sound.play('ach');
+  }
+}
+function renderAch() {
+  $('achCount').textContent = `${state.ach.length} / ${ACH.length}`;
+  $('achList').innerHTML = ACH.map((a) => {
+    const got = state.ach.includes(a.id);
+    return `<div class="ach ${got ? 'got' : ''}"><div class="ach-mark">${got ? '✓' : ''}</div><div><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div></div></div>`;
+  }).join('');
+}
+function renderStats() {
+  const st = state.st;
+  const rows = [
+    ['プレイ時間', hms(st.play)],
+    ['これまでに消した ti', fmt(st.totalTi)],
+    ['この周回で消した ti', fmt(state.runTi)],
+    ['いちばん速かった ti / 秒', fmt(st.bestRate)],
+    ['作った de', fmt(st.de)],
+    ['作った ai', fmt(st.ai)],
+    ['作った me', fmt(st.me)],
+    ['眠った回数', fmt(state.sleeps)],
+    ['夢', `${fmt(state.yume)}（ti ×${fmt(1 + state.yume)}）`],
+    ['実績', `${state.ach.length} / ${ACH.length}`],
+  ];
+  $('statList').innerHTML = rows.map(([k, v]) => `<div class="srow"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+function openSub(id) {
+  if (id === 'achPanel') renderAch(); else renderStats();
+  $('pause').classList.remove('active');
+  $(id).classList.add('active');
+}
+function closeSub() {
+  $('achPanel').classList.remove('active');
+  $('statsPanel').classList.remove('active');
+  $('pause').classList.add('active');
+}
+const subOpen = () => $('achPanel').classList.contains('active') || $('statsPanel').classList.contains('active');
+
+// ===== 音（Web Audio で作る。ファイルは使わない） =====
+const Sound = (() => {
+  let ctx = null, bgm = null, se = null, lastTick = -1;
+  const vol = () => (window.getSettings ? window.getSettings() : { bgm: 70, se: 70 });
+  function ensure() {
+    try {
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        bgm = ctx.createGain(); se = ctx.createGain();
+        bgm.connect(ctx.destination); se.connect(ctx.destination);
+        ambient();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+      update();
+    } catch {}
+  }
+  // 環境音：低いうなり（ゆっくり揺れる）＋かすかな空気の音
+  function ambient() {
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 500; lp.connect(bgm);
+    [[55, 0.5], [82.4, 0.28], [110.2, 0.14]].forEach(([f, a], i) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.value = a;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.05 + i * 0.04;
+      const lg = ctx.createGain(); lg.gain.value = a * 0.4;
+      lfo.connect(lg).connect(g.gain);
+      o.connect(g).connect(lp); o.start(); lfo.start();
+    });
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 0.6;
+    const ng = ctx.createGain(); ng.gain.value = 0.05;
+    n.connect(bp).connect(ng).connect(bgm); n.start();
+  }
+  function update() {
+    if (!ctx) return;
+    const v = vol();
+    bgm.gain.value = ((v.bgm ?? 70) / 100) * 0.16;
+    se.gain.value = ((v.se ?? 70) / 100) * 0.45;
+  }
+  function tone(freq, dur = 0.14, type = 'sine', when = 0, peak = 0.6, bus = se) {
+    if (!ctx || ctx.state !== 'running') return;
+    const t0 = ctx.currentTime + when;
+    const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t0);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(bus); o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  const SFX = {
+    de: () => { tone(660, 0.1); tone(990, 0.14, 'sine', 0.05, 0.4); },
+    ai: () => { tone(880, 0.1); tone(1320, 0.16, 'sine', 0.06, 0.4); },
+    me: () => { tone(523, 0.1); tone(784, 0.1, 'sine', 0.05); tone(1046, 0.2, 'sine', 0.1, 0.4); },
+    up: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.22, 'triangle', i * 0.07, 0.5)),
+    unlock: () => [392, 523, 659, 784].forEach((f, i) => tone(f, 0.3, 'triangle', i * 0.09, 0.5)),
+    ach: () => { tone(784, 0.15, 'triangle'); tone(1175, 0.3, 'triangle', 0.1, 0.5); },
+    look: () => tone(440, 0.18, 'triangle', 0, 0.3),
+    buy: () => { tone(330, 0.08, 'square', 0, 0.2); tone(660, 0.15, 'triangle', 0.05, 0.4); },
+    no: () => tone(150, 0.12, 'square', 0, 0.2),
+    sleep: () => [784, 659, 523, 392, 262].forEach((f, i) => tone(f, 0.5, 'sine', i * 0.18, 0.4)),
+  };
+  return {
+    ensure, update,
+    play(name) { if (SFX[name]) SFX[name](); },
+    // 時計の秒の音（環境音の音量で鳴らす）
+    tick(t) {
+      const sec = Math.floor(t);
+      if (sec === lastTick) return;
+      lastTick = sec;
+      tone(sec % 2 ? 1900 : 1700, 0.03, 'square', 0, 0.12, bgm);
+    },
+    suspend() { try { if (ctx) ctx.suspend(); } catch {} },
+  };
+})();
 
 // ===== 入力 =====
 const isLocked = () => document.pointerLockElement === renderer.domElement;
@@ -362,7 +726,7 @@ function bindInput() {
     if (e.code === 'Escape') {
       if (phase === 'menu') closeMachine();
       else if (phase === 'play' && !isLocked()) pause();
-      else if (phase === 'paused') resume();
+      else if (phase === 'paused') { if (subOpen()) closeSub(); else resume(); }
     }
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -445,13 +809,30 @@ function bindInput() {
   $('mUp').addEventListener('click', upgrade);
   $('mClose').addEventListener('click', closeMachine);
   $('machine').addEventListener('click', (e) => { if (e.target.id === 'machine') closeMachine(); });
-  // 変換装置2のパネル
-  $('m2Unlock').addEventListener('click', unlock2);
-  $('m2Make1').addEventListener('click', () => makeAi(false));
-  $('m2MakeAll').addEventListener('click', () => makeAi(true));
-  $('m2Up').addEventListener('click', upgrade2);
-  $('m2Close').addEventListener('click', closeMachine);
-  $('machine2').addEventListener('click', (e) => { if (e.target.id === 'machine2') closeMachine(); });
+  $('mAuto').addEventListener('click', () => buyAuto(1));
+  // 変換装置2・3のパネル
+  for (const id of [2, 3]) {
+    const p = GEN[id].p, make = id === 2 ? makeAi : makeMe;
+    $(p + 'Unlock').addEventListener('click', () => unlockGen(id));
+    $(p + 'Make1').addEventListener('click', () => make(false));
+    $(p + 'MakeAll').addEventListener('click', () => make(true));
+    $(p + 'Up').addEventListener('click', () => upgradeGen(id));
+    $(p + 'Close').addEventListener('click', closeMachine);
+    $('machine' + id).addEventListener('click', (e) => { if (e.target.id === 'machine' + id) closeMachine(); });
+  }
+  $('m2Auto').addEventListener('click', () => buyAuto(2));
+  // 眠る
+  $('btnSleep').addEventListener('click', trySleep);
+  $('sClose').addEventListener('click', closeMachine);
+  $('sleepPanel').addEventListener('click', (e) => { if (e.target.id === 'sleepPanel') closeMachine(); });
+  // 一時停止メニューの実績・統計
+  $('btnAch').addEventListener('click', () => openSub('achPanel'));
+  $('btnStats').addEventListener('click', () => openSub('statsPanel'));
+  $('achClose').addEventListener('click', closeSub);
+  $('statsClose').addEventListener('click', closeSub);
+  // 最初の操作で音を鳴らせるようにする（ブラウザの決まり）
+  addEventListener('pointerdown', () => { if (phase !== 'off') Sound.ensure(); });
+  addEventListener('keydown', () => { if (phase !== 'off') Sound.ensure(); });
 
   // スマホはページを閉じても beforeunload が来ないことがあるので、隠れたときにも保存
   document.addEventListener('visibilitychange', () => { if (document.hidden && phase !== 'off') save(); });
@@ -502,15 +883,22 @@ function collide() {
   state.x = Math.max(-lim, Math.min(lim, state.x));
   state.z = Math.max(-lim, Math.min(lim, state.z));
 
-  // ベッド（箱）から押し出す
-  const b = BED_BOX, r = PLAYER_R;
-  if (state.x > b.minX - r && state.x < b.maxX + r && state.z > b.minZ - r && state.z < b.maxZ + r) {
-    const push = [
-      [b.minX - r - state.x, 0], [b.maxX + r - state.x, 0],
-      [0, b.minZ - r - state.z], [0, b.maxZ + r - state.z],
-    ].sort((p, q) => Math.hypot(...p) - Math.hypot(...q))[0];
-    state.x += push[0];
-    state.z += push[1];
+  // ベッド・テーブル・椅子（箱）から押し出す
+  const r = PLAYER_R;
+  for (const b of BOXES) {
+    if (state.x > b.minX - r && state.x < b.maxX + r && state.z > b.minZ - r && state.z < b.maxZ + r) {
+      const push = [
+        [b.minX - r - state.x, 0], [b.maxX + r - state.x, 0],
+        [0, b.minZ - r - state.z], [0, b.maxZ + r - state.z],
+      ].sort((p, q) => Math.hypot(...p) - Math.hypot(...q))[0];
+      state.x += push[0];
+      state.z += push[1];
+    }
+  }
+  // 植木鉢（円）
+  {
+    const dx = state.x - PLANT.x, dz = state.z - PLANT.z, d = Math.hypot(dx, dz), min = PLANT.r + r;
+    if (d < min && d > 0.0001) { state.x = PLANT.x + (dx / d) * min; state.z = PLANT.z + (dz / d) * min; }
   }
 
   // 変換装置（円柱）から押し出す
@@ -527,7 +915,9 @@ function collide() {
 // いま近くにある装置（1 / 2 / なし=0）。装置2はチュートリアルが終わってから
 function nearMachine() {
   if (Math.hypot(state.x - MACHINE_POS[1].x, state.z - MACHINE_POS[1].z) < INTERACT_DIST) return 1;
-  if (machineUnlocked() && Math.hypot(state.x - MACHINE_POS[2].x, state.z - MACHINE_POS[2].z) < INTERACT_DIST) return 2;
+  for (const id of [2, 3]) {
+    if (machineUnlocked() && Math.hypot(state.x - MACHINE_POS[id].x, state.z - MACHINE_POS[id].z) < INTERACT_DIST) return id;
+  }
   return 0;
 }
 const nearConverter = () => nearMachine() === 1;
@@ -536,14 +926,21 @@ function primaryAction(all) {
   const n = nearMachine();
   if (n === 1) convert(all);
   else if (n === 2 && state.c2) makeAi(all);
+  else if (n === 3 && state.c3) makeMe(all);
+  else if (!n) {
+    const e = nearExam();
+    if (e) examine(e);
+  }
 }
 
 // ===== ti → de 変換 =====
-function convert(all, fromPanel = false) {
+function convert(all, fromPanel = false, quiet = false) {
   if (state.tut < 4 || (!fromPanel && !nearConverter())) return;
   const c = conv();
   const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
   if (n <= 0) {
+    if (quiet) return;
+    Sound.play('no');
     const p = $('prompt');
     p.classList.remove('shake');
     void p.offsetWidth;
@@ -552,50 +949,119 @@ function convert(all, fromPanel = false) {
   }
   state.ti -= n * c.cost;
   state.de += n * c.gain;
+  state.st.de += n * c.gain;
   machines[1].pulse = 1;
+  if (quiet) return;
+  Sound.play('de');
   toast(`+${fmt(n * c.gain)} de`);
   save();
   if (phase === 'menu') renderMachine();
 }
 
 // ===== ti → ai（変換装置2。解放前は装置1のパネルで Lv0 の性能） =====
-function makeAi(all) {
+function makeAi(all, quiet = false) {
   const c = conv2();
   const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
-  if (n <= 0) return;
+  if (n <= 0) { if (!quiet) Sound.play('no'); return; }
   state.ti -= n * c.cost;
   state.ai = (state.ai || 0) + n * c.gain;
+  state.st.ai += n * c.gain;
   machines[state.c2 ? 2 : 1].pulse = 1;
+  if (quiet) return;
+  Sound.play('ai');
   toast(`+${fmt(n * c.gain)} ai`);
   save();
   if (phase === 'menu') renderMachine();
 }
 
-// ===== 変換装置2の解放（10,000 ai） =====
-function unlock2() {
-  if (state.c2 || (state.ai || 0) < UNLOCK2_COST) return;
+// ===== ti → me（変換装置3） =====
+function makeMe(all) {
+  if (!state.c3) return;
+  const c = conv3();
+  const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
+  if (n <= 0) { Sound.play('no'); return; }
+  state.ti -= n * c.cost;
+  state.me = (state.me || 0) + n * c.gain;
+  state.st.me += n * c.gain;
+  machines[3].pulse = 1;
+  Sound.play('me');
+  toast(`+${fmt(n * c.gain)} me`);
+  save();
+  if (phase === 'menu') renderMachine();
+}
+
+// ===== 自動化機 =====
+function buyAuto(id) {
+  const key = 'auto' + id;
+  if (state[key]) {
+    // 買ったあとは ON / OFF の切り替え
+    state[key + 'On'] = !state[key + 'On'];
+  } else {
+    if ((state.ai || 0) < AUTO_COST[id]) return;
+    state.ai -= AUTO_COST[id];
+    state[key] = true;
+    state[key + 'On'] = true;
+    Sound.play('buy');
+    toast(`自動化機${id} を置いた`);
+  }
+  save();
+  renderMachine();
+}
+let autoTimer = 0;
+function runAutos(realDt) {
+  if (!machineUnlocked()) return;
+  autoTimer += realDt;
+  if (autoTimer < AUTO_INTERVAL) return;
+  autoTimer %= AUTO_INTERVAL;
+  if (state.auto1 && state.auto1On) convert(true, true, true);
+  if (state.auto2 && state.auto2On && state.c2) makeAi(true, true);
+}
+// パネルの自動化機の行
+function renderAuto(id, p) {
+  const key = 'auto' + id, b = $(p + 'Auto');
+  if (!state[key]) {
+    $(p + 'AutoInfo').innerHTML = `${AUTO_INTERVAL}秒ごとに「まとめて」を自動でやる　／　${fmt(AUTO_COST[id])} ai`;
+    b.textContent = '買う';
+    b.disabled = (state.ai || 0) < AUTO_COST[id];
+    b.classList.remove('on');
+  } else {
+    const on = state[key + 'On'];
+    $(p + 'AutoInfo').textContent = on ? `${AUTO_INTERVAL}秒ごとに自動で動いている` : '止めている';
+    b.textContent = on ? 'ON' : 'OFF';
+    b.disabled = false;
+    b.classList.toggle('on', on);
+  }
+}
+
+// ===== 変換装置2・3の解放 =====
+function unlockGen(id) {
+  const g = GEN[id];
+  if (state[g.unlockedKey] || (state[g.unlockUnit] || 0) < g.unlockCost) return;
   if (!upArmed) { upArmed = true; renderMachine(); return; }
   upArmed = false;
-  state.ai -= UNLOCK2_COST;
-  state.c2 = true;
-  state.lv2 = 0;
-  machines[2].pulse = 1.6;
-  toast('変換装置2 を解放');
+  state[g.unlockUnit] -= g.unlockCost;
+  state[g.unlockedKey] = true;
+  state[g.lvKey] = 0;
+  machines[id].pulse = 1.6;
+  Sound.play('unlock');
+  toast(`変換装置${id} を解放`);
   save();
   renderMachine();
 }
 
-// ===== 変換装置2のアップグレード（ai を使う。残りの ai も 0 になる） =====
-function upgrade2() {
-  const lv = state.lv2 || 0;
-  if (!state.c2 || lv >= AI_MAX) return;
-  if ((state.ai || 0) < UPGRADE2_COST[lv]) return;
+// ===== 変換装置2・3のアップグレード（強化すると、作る資源は 0 になる） =====
+function upgradeGen(id) {
+  const g = GEN[id], lv = state[g.lvKey] || 0;
+  if (!state[g.unlockedKey] || lv >= g.max) return;
+  if ((state[g.upUnit] || 0) < g.upCost[lv]) return;
   if (!upArmed) { upArmed = true; renderMachine(); return; }
   upArmed = false;
-  state.ai = 0;
-  state.lv2 = lv + 1;
-  machines[2].pulse = 1.6;
-  toast(`変換装置2 Lv${state.lv2}`);
+  state[g.upUnit] -= g.upCost[lv];
+  state[g.unit] = 0;
+  state[g.lvKey] = lv + 1;
+  machines[id].pulse = 1.6;
+  Sound.play('up');
+  toast(`変換装置${id} Lv${state[g.lvKey]}`);
   save();
   renderMachine();
 }
@@ -613,6 +1079,7 @@ function upgrade() {
   state.lv = lv + 1;
   state.de = 0;
   machines[1].pulse = 1.6;
+  Sound.play('up');
   toast(`変換装置1 Lv${state.lv}`);
   save();
   renderMachine();
@@ -622,10 +1089,16 @@ function upgrade() {
 let openPanel = null; // 'machine'（装置1）か 'machine2'（装置2）
 function openMachine() {
   const n = nearMachine();
-  if (!machineUnlocked() || !n) return;
+  if (!machineUnlocked()) return;
+  // 装置が近くになければ、ベッドで眠る
+  if (!n) {
+    const e = nearExam();
+    if (e && e.id === 'bed') openSleep();
+    return;
+  }
   phase = 'menu';
   upArmed = false;
-  openPanel = n === 1 ? 'machine' : 'machine2';
+  openPanel = n === 1 ? 'machine' : 'machine' + n;
   for (const k in keys) keys[k] = false;
   if (window.TDG_resetStick) window.TDG_resetStick();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -633,8 +1106,7 @@ function openMachine() {
   $(openPanel).classList.add('active');
 }
 function closeMachine() {
-  $('machine').classList.remove('active');
-  $('machine2').classList.remove('active');
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel']) $(id).classList.remove('active');
   openPanel = null;
   phase = 'play';
   upArmed = false;
@@ -643,7 +1115,9 @@ function closeMachine() {
 
 // パネルの中身（開いている間は毎フレーム更新）
 function renderMachine() {
-  if (openPanel === 'machine2') renderMachine2();
+  if (openPanel === 'machine2') renderGen(2);
+  else if (openPanel === 'machine3') renderGen(3);
+  else if (openPanel === 'sleepPanel') renderSleep();
   else renderMachine1();
 }
 function lvBar(lv, max) {
@@ -678,48 +1152,122 @@ function renderMachine1() {
     up.textContent = upArmed ? '本当に？' : '強化';
     up.classList.toggle('armed', upArmed);
   }
+  renderAuto(1, 'm');
   $('mTi').textContent = fmt(state.ti);
   $('mDe').textContent = fmt(state.de);
   $('mAi').textContent = fmt(ai);
 }
 
-function renderMachine2() {
-  const ai = state.ai || 0, lv = state.lv2 || 0;
-  $('m2Lock').style.display = state.c2 ? 'none' : '';
-  $('m2Body').style.display = state.c2 ? '' : 'none';
-  $('m2Lv').textContent = !state.c2 ? 'LOCKED' : lv >= AI_MAX ? 'Lv MAX' : `Lv ${lv}`;
-  $('m2LvBar').innerHTML = lvBar(state.c2 ? lv : 0, AI_MAX);
-  if (!state.c2) {
-    const b = $('m2Unlock');
-    b.disabled = ai < UNLOCK2_COST;
+function renderGen(id) {
+  const g = GEN[id], p = g.p;
+  const lv = state[g.lvKey] || 0, unlocked = !!state[g.unlockedKey];
+  const has = (k) => state[k] || 0;
+  $(p + 'Lock').style.display = unlocked ? 'none' : '';
+  $(p + 'Body').style.display = unlocked ? '' : 'none';
+  $(p + 'Lv').textContent = !unlocked ? 'LOCKED' : lv >= g.max ? 'Lv MAX' : `Lv ${lv}`;
+  $(p + 'LvBar').innerHTML = lvBar(unlocked ? lv : 0, g.max);
+  if (!unlocked) {
+    const b = $(p + 'Unlock');
+    b.disabled = has(g.unlockUnit) < g.unlockCost;
     if (b.disabled) upArmed = false;
-    b.textContent = upArmed ? '本当に？' : `解放する`;
+    b.textContent = upArmed ? '本当に？' : '解放する';
     b.classList.toggle('armed', upArmed);
-    $('m2UnlockCost').textContent = `${fmt(UNLOCK2_COST)} ai（いま ${fmt(ai)} ai）`;
+    $(p + 'UnlockCost').textContent = `${fmt(g.unlockCost)} ${g.unlockUnit}（いま ${fmt(has(g.unlockUnit))} ${g.unlockUnit}）`;
   } else {
-    const c = conv2();
-    $('m2Rate').textContent = `${fmt(c.cost)} ti → ${c.gain} ai`;
-    $('m2Make1').disabled = state.ti < c.cost;
-    $('m2MakeAll').disabled = state.ti < c.cost * 2;
-    const up = $('m2Up');
-    if (lv >= AI_MAX) {
-      $('m2UpInfo').textContent = 'これ以上は強化できない';
-      $('m2UpWarn').style.visibility = 'hidden';
+    const c = g.table[Math.min(lv, g.max)];
+    $(p + 'Rate').textContent = `${fmt(c.cost)} ti → ${c.gain} ${g.unit}`;
+    $(p + 'Make1').disabled = state.ti < c.cost;
+    $(p + 'MakeAll').disabled = state.ti < c.cost * 2;
+    const up = $(p + 'Up');
+    if (lv >= g.max) {
+      $(p + 'UpInfo').textContent = 'これ以上は強化できない';
+      $(p + 'UpWarn').style.visibility = 'hidden';
       up.textContent = 'MAX';
       up.disabled = true;
       up.classList.remove('armed');
     } else {
-      const next = AI_LV[lv + 1];
-      $('m2UpInfo').innerHTML = `Lv${lv + 1}：<b>${fmt(next.cost)} ti → ${next.gain} ai</b>　／　${fmt(UPGRADE2_COST[lv])} ai`;
-      $('m2UpWarn').style.visibility = 'visible';
-      up.disabled = ai < UPGRADE2_COST[lv];
+      const next = g.table[lv + 1];
+      $(p + 'UpInfo').innerHTML = `Lv${lv + 1}：<b>${fmt(next.cost)} ti → ${next.gain} ${g.unit}</b>　／　${fmt(g.upCost[lv])} ${g.upUnit}`;
+      $(p + 'UpWarn').style.visibility = 'visible';
+      up.disabled = has(g.upUnit) < g.upCost[lv];
       if (up.disabled) upArmed = false;
       up.textContent = upArmed ? '本当に？' : '強化';
       up.classList.toggle('armed', upArmed);
     }
+    if (id === 2) renderAuto(2, 'm2');
   }
-  $('m2Ti').textContent = fmt(state.ti);
-  $('m2Ai').textContent = fmt(ai);
+  $(p + 'Ti').textContent = fmt(state.ti);
+  $(p + 'Res').textContent = `${fmt(has(g.unit))} ${g.unit}` + (g.unit !== 'ai' ? ` / ${fmt(has('ai'))} ai` : '');
+}
+
+// ===== 眠る（転生） =====
+function openSleep() {
+  phase = 'menu';
+  upArmed = false;
+  openPanel = 'sleepPanel';
+  for (const k in keys) keys[k] = false;
+  if (window.TDG_resetStick) window.TDG_resetStick();
+  if (document.pointerLockElement) document.exitPointerLock();
+  renderSleep();
+  $('sleepPanel').classList.add('active');
+}
+function renderSleep() {
+  const gain = yumeGain(), y = state.yume || 0;
+  $('sGain').textContent = gain >= 1 ? `+${fmt(gain)}` : '0';
+  $('sMult').textContent = `ti ×${fmt(1 + y)} → ×${fmt(1 + y + gain)}`;
+  $('sRun').textContent = `この周回で消した ti：${fmt(state.runTi)}（${fmt(SLEEP_MIN)} から眠れる）`;
+  const b = $('btnSleep');
+  b.disabled = gain < 1;
+  if (b.disabled) upArmed = false;
+  b.textContent = upArmed ? '本当に？' : '眠る';
+  b.classList.toggle('armed', upArmed);
+}
+function trySleep() {
+  if (openPanel !== 'sleepPanel' || yumeGain() < 1) return;
+  if (!upArmed) { upArmed = true; renderSleep(); return; }
+  upArmed = false;
+  sleepAndWake();
+}
+async function sleepAndWake() {
+  const my = ++wakeToken;
+  const alive = () => my === wakeToken;
+  const gain = yumeGain();
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel']) $(id).classList.remove('active');
+  openPanel = null;
+  phase = 'wake';
+  if (document.pointerLockElement) document.exitPointerLock();
+  Sound.play('sleep');
+  const w = $('wake');
+  w.className = 'show';
+  await sleep(900);
+  if (!alive()) return;
+  // ここで時間が消える：資源と装置は 0 に、夢・自動化機・実績・統計は残る
+  Object.assign(state, { ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: 0 });
+  state.yume = (state.yume || 0) + gain;
+  state.sleeps = (state.sleeps || 0) + 1;
+  state.x = BED.x; state.z = BED.z - 0.75; camY = 0.85; yaw = -2.48; pitch = 1.45;
+  save();
+  await say('……おやすみ。', 1600);
+  if (!alive()) return;
+  await say(`夢を ${fmt(gain)} つ見た。`, 1800);
+  if (!alive()) return;
+  w.className = 'show blinking';
+  await sleep(2700);
+  if (!alive()) return;
+  w.className = '';
+  const from = { x: state.x, z: state.z };
+  await tween(2000, (k) => {
+    if (!alive()) return;
+    const e = ease(k);
+    state.x = lerp(from.x, -3.4, e);
+    state.z = lerp(from.z, -4.4, e);
+    camY = lerp(0.85, EYE, e);
+    pitch = lerp(1.45, 0, e);
+  });
+  if (!alive()) return;
+  phase = 'play';
+  toast(`夢 +${fmt(gain)}`);
+  save();
 }
 
 function toast(text) {
@@ -837,32 +1385,50 @@ function updateHud() {
   $('deVal').textContent = fmt(state.de);
   $('mult').textContent = fmt(1 + state.de);
   $('aiVal').textContent = fmt(state.ai || 0);
+  $('meVal').textContent = fmt(state.me || 0);
+  $('meMult').textContent = fmt(1 + (state.me || 0));
+  $('hudMe').classList.toggle('show', !!state.c3 || (state.me || 0) > 0);
+  $('yumeChip').style.display = (state.yume || 0) > 0 ? '' : 'none';
+  $('yumeChip').textContent = `夢 ×${fmt(1 + (state.yume || 0))}`;
   const lvTxt = (lv, max) => (lv >= max ? 'MAX' : lv);
-  $('lvChip').textContent = `装置1 Lv ${lvTxt(state.lv || 0, CONV_MAX)}` + (state.c2 ? `・装置2 Lv ${lvTxt(state.lv2 || 0, AI_MAX)}` : '');
+  $('lvChip').textContent = `装置1 Lv ${lvTxt(state.lv || 0, CONV_MAX)}` + (state.c2 ? `・装置2 Lv ${lvTxt(state.lv2 || 0, AI_MAX)}` : '') + (state.c3 ? `・装置3 Lv ${lvTxt(state.lv3 || 0, ME_MAX)}` : '');
   // ai は、作れるようになったら（または持っていたら）表示
   $('hudAi').classList.toggle('show', machineUnlocked() && ((state.ai || 0) > 0 || (state.lv || 0) > 0 || state.ti >= AI_COST));
   if (phase === 'menu') renderMachine();
 
   const prompt = $('prompt');
   const near = phase === 'play' && state.tut >= 4 ? nearMachine() : 0;
-  const show = near > 0;
+  // 装置が近くになければ「調べる」
+  const exam = phase === 'play' && !near && state.tut >= 1 ? nearExam() : null;
+  const show = near > 0 || !!exam;
   prompt.classList.toggle('show', show);
   const act = $('touchAct');
   act.classList.toggle('show', show);
-  $('btnMachine').style.display = show && machineUnlocked() ? '' : 'none';
+  act.classList.toggle('exam', !near);
+  $('btnMachine').style.display = show && machineUnlocked() && (near || (exam && exam.id === 'bed')) ? '' : 'none';
+  $('btnMachine').textContent = near ? '装置' : '眠る';
   if (!show) return;
+  $('btnAct').style.display = '';
+  if (exam) {
+    prompt.classList.remove('off');
+    act.classList.remove('off');
+    $('btnAct').textContent = '調べる';
+    const sleepHint = exam.id === 'bed' && machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 眠る</span>` : '';
+    $('promptText').innerHTML = IS_TOUCH ? `${exam.name}を調べる` : `${exam.name}を調べる　<span class="sub"><kbd>E</kbd></span>${sleepHint}`;
+    return;
+  }
   const panelHint = machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 装置を開く</span>` : '';
-  // ロック中の変換装置2：開いて解放するだけ
-  if (near === 2 && !state.c2) {
+  // ロック中の変換装置2・3：開いて解放するだけ
+  if (near >= 2 && !state[GEN[near].unlockedKey]) {
+    const g = GEN[near];
     prompt.classList.add('off');
     act.classList.add('off');
     $('btnAct').style.display = 'none';
-    $('promptText').innerHTML = IS_TOUCH ? `変換装置2（ロック中・${fmt(UNLOCK2_COST)} ai で解放）` : `変換装置2　ロック中（${fmt(UNLOCK2_COST)} ai で解放）${panelHint}`;
+    $('promptText').innerHTML = IS_TOUCH ? `変換装置${near}（ロック中・${fmt(g.unlockCost)} ${g.unlockUnit} で解放）` : `変換装置${near}　ロック中（${fmt(g.unlockCost)} ${g.unlockUnit} で解放）${panelHint}`;
     return;
   }
-  $('btnAct').style.display = '';
-  const c = near === 1 ? conv() : conv2();
-  const unit = near === 1 ? 'de' : 'ai';
+  const c = near === 1 ? conv() : near === 2 ? conv2() : conv3();
+  const unit = near === 1 ? 'de' : near === 2 ? 'ai' : 'me';
   $('btnAct').textContent = near === 1 ? '変換' : '作る';
   const can = state.ti >= c.cost;
   const rateTxt = `${fmt(c.cost)} ti → ${c.gain} ${unit}`;
@@ -888,7 +1454,15 @@ function frame(now) {
   const t = now / 1000;
 
   // 時間を消して ti を稼ぐ（放置ゲームなので一時停止中も貯まる）
-  if (state.tut >= 3) state.ti += rate() * realDt;
+  if (state.tut >= 3 && phase !== 'wake') {
+    const r = rate(), gain = r * realDt;
+    state.ti += gain;
+    state.runTi = (state.runTi || 0) + gain;
+    state.st.totalTi += gain;
+    if (r > state.st.bestRate) state.st.bestRate = r;
+  }
+  state.st.play += realDt;
+  runAutos(realDt);
 
   if (phase === 'play') move(dt);
   camera.position.set(state.x, camY, state.z);
@@ -906,8 +1480,9 @@ function frame(now) {
   hands.hour.rotation.z = (t / 43200) * Math.PI * 2 + 2.6;
   // 変換装置のアニメーション
   setMachineLocked(machines[2], !state.c2);
+  setMachineLocked(machines[3], !state.c3);
   for (const m of Object.values(machines)) {
-    const lv = m.id === 1 ? state.lv || 0 : state.c2 ? state.lv2 || 0 : 0;
+    const lv = m.id === 1 ? state.lv || 0 : m.id === 2 ? (state.c2 ? state.lv2 || 0 : 0) : (state.c3 ? state.lv3 || 0 : 0);
     const speed = m.locked ? 0.25 : 1; // ロック中はゆっくり
     m.pulse = Math.max(0, m.pulse - dt * 2);
     m.rings.forEach((r, i) => {
@@ -923,7 +1498,26 @@ function frame(now) {
       const a = t * 1.6 + (i / CONV_MAX) * Math.PI * 2;
       o.position.set(Math.cos(a) * 0.32, 1.6 + Math.sin(a * 2) * 0.06, Math.sin(a) * 0.32);
     });
+    // 自動化機
+    if (m.auto) {
+      const bought = !!state['auto' + m.id], on = bought && state['auto' + m.id + 'On'];
+      m.auto.visible = bought;
+      if (bought) m.autoLamp.material.emissiveIntensity = on ? (Math.sin(t * 6) > 0 ? 2.5 : 0.3) : 0;
+    }
   }
+  updateRoom(t);
+
+  // 調べたときのメッセージを消す
+  if (msgTimer > 0) {
+    msgTimer -= dt;
+    if (msgTimer <= 0) $('msg').classList.remove('show');
+  }
+  // 実績は1秒に1回チェック
+  achTimer += realDt;
+  if (achTimer > 1) { achTimer = 0; checkAch(); }
+  // 音量の反映と、時計の秒の音
+  Sound.update();
+  if (phase !== 'off') Sound.tick(t);
 
   updateTutorial(dt);
   updateHud();
@@ -946,7 +1540,11 @@ function load() {
   try {
     const s = JSON.parse(localStorage.getItem(saveKey()));
     if (!s || typeof s.ti !== 'number') return null;
-    return { ...newState(), ...s };
+    const d = { ...newState(), ...s };
+    d.st = { ...newStats(), ...(s.st || {}) };
+    d.ach = Array.isArray(s.ach) ? s.ach : [];
+    d.seen = Array.isArray(s.seen) ? s.seen : [];
+    return d;
   } catch { return null; }
 }
 addEventListener('beforeunload', () => { if (phase !== 'off') save(); });
@@ -966,10 +1564,11 @@ function resume() {
 function toTitle() {
   wakeToken++;
   leaving = true;
-  $('machine').classList.remove('active');
-  $('machine2').classList.remove('active');
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'achPanel', 'statsPanel']) $(id).classList.remove('active');
+  $('msg').classList.remove('show');
   openPanel = null;
   save();
+  Sound.suspend();
   // かるわかGAMES アカウントにログインしていれば、すぐクラウドにも保存
   if (window.KaAccount && KaAccount.isLoggedIn()) KaAccount.saveNow();
   phase = 'off';
@@ -984,6 +1583,7 @@ window.TDG = {
   start(isNew, n = 1) {
     slot = n;
     init();
+    Sound.ensure(); // ボタンを押した直後なので音を鳴らせる
     if (window.TDG_resetStick) window.TDG_resetStick();
     state = isNew ? newState() : load() || newState();
     yaw = state.yaw; pitch = state.pitch || 0; camY = EYE;
