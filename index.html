@@ -431,6 +431,8 @@
   #wakeText.on { opacity: 1; transform: none; }
   #pause p { font-size: 13px; color: #666; line-height: 1.8; margin-top: -12px; }
 </style>
+<!-- 大きな数のライブラリ（break_infinity.js、MIT。vendor/ に同梱） -->
+<script src="vendor/break_infinity.min.js"></script>
 <!-- かるわかGAMES アカウント（共通ログイン＋クラウドセーブ）。右下の標準バッジは消して、タイトルに専用ボタンを置く -->
 <script src="https://kaikomziu.github.io/game-links/js/karuwaka-account.js" data-game="time-deleted-game" data-keys="tdg_slot1,tdg_slot2,tdg_slot3,tdg_save,tdg_settings,tdg_deletedTime,tdg_introSeen" data-badge="off"></script>
 </head>
@@ -468,7 +470,7 @@
 <!-- 開始前メッセージ（初回のみ） -->
 <div id="intro" class="screen">
   <div class="tag">BEFORE YOU START</div>
-  <p>このゲームは<b>Roblox</b>の<br>「時間を無駄にする」というゲームに<br>インスパイアされています！</p>
+  <p>このゲームは<b>時間を無駄にする</b>、<b>Cookie Clicker</b>、<br><b>Revolution Idle</b> 等の様々なゲームに<br>インスパイアを受けています！</p>
   <div class="beta">
     <span class="badge">β VERSION</span>
     <div class="beta-text"><b>これはβ版です！</b><br>開発中のため、内容が変わったり、<br>セーブデータが消えたりすることがあります。</div>
@@ -881,10 +883,32 @@
     if (m >= 10) return `${cut(m / 10, 2)}e${e + 1}`; // 誤差で 10.00 になったとき
     return `${cut(m, 2)}e${e}`;
   };
+  // 1e308 = 1 inf。1e308 以上は「2.50 inf」のように inf という単位で出す（inf の中でさらに 1e308 を超えたら inf^2 …）
+  const INF_UNIT = 1e308;
+  function toDec(n) {
+    if (window.Decimal && n instanceof Decimal) return n;
+    if (n == null || (typeof n === 'number' && Number.isNaN(n))) return null;
+    try { return window.Decimal ? new Decimal(n) : null; } catch { return null; }
+  }
   function formatNum(n, mode = settings.numFormat) {
-    n = Math.floor(Number(n) || 0);
+    const d = toDec(n);
+    if (d && Number.isFinite(d.mantissa) && Number.isFinite(d.exponent)) {
+      if (d.lt(0)) return '-' + formatNum(d.neg(), mode);
+      if (d.gte(INF_UNIT)) {
+        let v = d, k = 0;
+        while (v.gte(INF_UNIT) && k < 50) { v = v.div(INF_UNIT); k++; }
+        const unit = k === 1 ? ' inf' : ` inf^${k}`;
+        const x = v.toNumber();
+        return (x < 1000 ? sig3(x) : formatPlain(Math.floor(x), mode)) + unit;
+      }
+      return formatPlain(Math.floor(d.toNumber()), mode);
+    }
+    return formatPlain(Math.floor(Number(n) || 0), mode);
+  }
+  // 1e308 未満のふつうの数の表示
+  function formatPlain(n, mode) {
     if (!isFinite(n)) return '∞';
-    if (n < 0) return '-' + formatNum(-n, mode);
+    if (n < 0) return '-' + formatPlain(-n, mode);
     if (mode === 'short') {
       if (n < 1000) return String(n);
       const k = Math.floor(Math.log10(n) / 3);
@@ -959,8 +983,10 @@
       const no = `<span class="no">SLOT ${String(n).padStart(2, '0')}</span>`;
       if (d) {
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
-        const aiTxt = (d.ai || d.lv ? `${fmtNum(d.ai || 0)}<small>ai</small>` : '') + (d.me || d.c3 ? `${fmtNum(d.me || 0)}<small>me</small>` : '');
-        const lvTxt = (d.yume ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
+        // セーブの数字は文字列（"1e+320" など）なので、0 より大きいかは Decimal で比べる
+        const pos = (v) => { const x = toDec(v); return !!x && x.gt(0); };
+        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '');
+        const lvTxt = (pos(d.yume) ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
         b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
           `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
           `<span class="del" role="button" aria-label="削除" title="このセーブを削除">✕</span>`;
@@ -1015,7 +1041,7 @@
   function renderNumFormat() {
     $('numFormat').innerHTML = NUM_FORMATS.map((f) =>
       `<button data-f="${f.id}" class="${settings.numFormat === f.id ? 'on' : ''}">${f.label}</button>`).join('');
-    $('numExample').textContent = [1234, 12345678, 9.87e13].map((n) => formatNum(n)).join('　');
+    $('numExample').textContent = [1234, 12345678, 9.87e13, '2.5e308'].map((n) => formatNum(n)).join('　');
   }
   $('numFormat').addEventListener('click', (e) => {
     const f = e.target.dataset && e.target.dataset.f;

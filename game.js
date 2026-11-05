@@ -99,24 +99,34 @@ const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, 
   yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
 // 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
-const rate = () => Math.min(NUM_CAP, 1 * (1 + (state.de || 0)) * (1 + (state.me || 0)) * (1 + (state.yume || 0)));
-
-// ===== 数字が壊れないようにする =====
-// JavaScript の数は約 1.8e308 を超えると ∞ になり、∞ − ∞ で NaN（数でない値）に壊れる。
-// そうならないよう、資源は NUM_CAP で頭打ちにし、∞ や NaN が入っていたら直す。
-const NUM_CAP = 1e300;
-const NUM_KEYS = ['ti', 'de', 'ai', 'me', 'runTi', 'yume', 'sleeps'];
-const STAT_KEYS = ['play', 'totalTi', 'bestRate', 'de', 'ai', 'me'];
-const fixNum = (v) => (v === Infinity || v > NUM_CAP ? NUM_CAP : Number.isFinite(v) && v > 0 ? v : 0);
+// ===== 大きな数（break_infinity.js の Decimal） =====
+// ti・de・ai・me・夢などは 1e308 を超えても計算できるよう Decimal で持つ（計算は .add() .sub() .mul() などで）。
+// 普通の数・文字列（セーブ）・null・NaN を受け取っても、必ず有効な Decimal にする。
+const Decimal = window.Decimal;
+const D = (v) => {
+  if (v instanceof Decimal) return Number.isFinite(v.mantissa) && Number.isFinite(v.exponent) ? v : new Decimal(0);
+  if (v == null || (typeof v === 'number' && Number.isNaN(v))) return new Decimal(0);
+  try {
+    const d = new Decimal(v);
+    return Number.isFinite(d.mantissa) && Number.isFinite(d.exponent) ? d : new Decimal(0);
+  } catch { return new Decimal(0); }
+};
+const ZERO = () => new Decimal(0);
+const BIG_KEYS = ['ti', 'de', 'ai', 'me', 'runTi', 'yume'];
+const BIG_STATS = ['totalTi', 'bestRate', 'de', 'ai', 'me'];
+// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
+const rate = () => D(state.de).add(1).mul(D(state.me).add(1)).mul(D(state.yume).add(1));
+// セーブの中身を必ず正しい形にする（大きな数は Decimal、マイナスは 0、壊れた値は 0）
 function sanitize(s) {
-  for (const k of NUM_KEYS) s[k] = fixNum(s[k]);
+  for (const k of BIG_KEYS) { const d = D(s[k]); s[k] = d.lt(0) ? ZERO() : d; }
   if (!s.st || typeof s.st !== 'object') s.st = newStats();
-  for (const k of STAT_KEYS) s.st[k] = fixNum(s.st[k]);
-  for (const k of ['lv', 'lv2', 'lv3', 'tut']) s[k] = Number.isFinite(s[k]) ? s[k] : 0;
+  for (const k of BIG_STATS) { const d = D(s.st[k]); s.st[k] = d.lt(0) ? ZERO() : d; }
+  s.st.play = Number.isFinite(s.st.play) && s.st.play > 0 ? s.st.play : 0;
+  for (const k of ['lv', 'lv2', 'lv3', 'tut', 'sleeps']) s[k] = Number.isFinite(s[k]) ? s[k] : 0;
   return s;
 }
 // 眠ったときにもらえる夢
-const yumeGain = () => Math.floor(Math.sqrt((state.runTi || 0) / SLEEP_MIN));
+const yumeGain = () => Decimal.sqrt(D(state.runTi).div(SLEEP_MIN)).floor();
 // いまの変換装置1の性能
 const conv = () => CONV_LV[Math.min(state.lv || 0, CONV_MAX)];
 // いまの変換装置2の性能（解放前は装置1のパネルで Lv0 の性能で作れる）
@@ -487,7 +497,7 @@ function buildProps() {
 // 進み具合に合わせて部屋を変える（毎フレーム）
 function updateRoom(t) {
   const st = state.st || {};
-  props.crack.visible = (st.ai || 0) > 0 || state.c2;
+  props.crack.visible = D(st.ai).gt(0) || state.c2;
   props.clock2.visible = !!state.c2;
   props.door.visible = !!state.c3;
   props.flower.visible = (state.sleeps || 0) > 0;
@@ -510,7 +520,7 @@ const EXAMS = [
   { id: 'bed', name: 'ベッド', x: -3.6, z: -4.7, show: () => true, msgs: () => [
     'ここで目が覚めた。',
     'まだ少し温かい。',
-    state.tut >= 6 && yumeGain() >= 1 ? '今なら、眠れば全部消せる気がする。（F で眠る）' : 'まだ眠くない。',
+    state.tut >= 6 && yumeGain().gte(1) ? '今なら、眠れば全部消せる気がする。（F で眠る）' : 'まだ眠くない。',
   ] },
   { id: 'note', name: 'ノート', x: 4.6, z: -4.0, show: () => true, msgs: () => [
     '真っ白なノート。何も書かれていない。',
@@ -582,18 +592,18 @@ function showMsg(name, text) {
 
 // ===== 実績 =====
 const ACH = [
-  { id: 'de1', name: 'はじめての de', desc: 'de を作る', ok: (s) => s.st.de >= 1 },
-  { id: 'de1k', name: 'de コレクター', desc: 'de を合計 1,000 作る', ok: (s) => s.st.de >= 1000 },
-  { id: 'ai1', name: 'はじめての ai', desc: 'ai を作る', ok: (s) => s.st.ai >= 1 },
+  { id: 'de1', name: 'はじめての de', desc: 'de を作る', ok: (s) => s.st.de.gte(1) },
+  { id: 'de1k', name: 'de コレクター', desc: 'de を合計 1,000 作る', ok: (s) => s.st.de.gte(1000) },
+  { id: 'ai1', name: 'はじめての ai', desc: 'ai を作る', ok: (s) => s.st.ai.gte(1) },
   { id: 'lv1max', name: '変換装置1 MAX', desc: '変換装置1を Lv5 にする', ok: (s) => s.lv >= CONV_MAX },
   { id: 'c2', name: '2台目', desc: '変換装置2を解放する', ok: (s) => s.c2 },
   { id: 'lv2max', name: '変換装置2 MAX', desc: '変換装置2を Lv5 にする', ok: (s) => s.lv2 >= AI_MAX },
   { id: 'c3', name: '3台目', desc: '変換装置3を解放する', ok: (s) => s.c3 },
-  { id: 'me1', name: 'はじめての me', desc: 'me を作る', ok: (s) => s.st.me >= 1 },
+  { id: 'me1', name: 'はじめての me', desc: 'me を作る', ok: (s) => s.st.me.gte(1) },
   { id: 'auto', name: 'おまかせ', desc: '自動化機を買う', ok: (s) => s.auto1 || s.auto2 },
-  { id: 'ti1m', name: '100万', desc: 'ti を合計 100万 消す', ok: (s) => s.st.totalTi >= 1e6 },
-  { id: 'ti1b', name: '10億', desc: 'ti を合計 10億 消す', ok: (s) => s.st.totalTi >= 1e9 },
-  { id: 'ti1t', name: '1兆', desc: 'ti を合計 1兆 消す', ok: (s) => s.st.totalTi >= 1e12 },
+  { id: 'ti1m', name: '100万', desc: 'ti を合計 100万 消す', ok: (s) => s.st.totalTi.gte(1e6) },
+  { id: 'ti1b', name: '10億', desc: 'ti を合計 10億 消す', ok: (s) => s.st.totalTi.gte(1e9) },
+  { id: 'ti1t', name: '1兆', desc: 'ti を合計 1兆 消す', ok: (s) => s.st.totalTi.gte(1e12) },
   { id: 'sleep1', name: 'おやすみ', desc: 'はじめて眠る', ok: (s) => s.sleeps >= 1 },
   { id: 'sleep5', name: 'よく眠る', desc: '5回眠る', ok: (s) => s.sleeps >= 5 },
   { id: 'look', name: '観察', desc: '部屋の物を全部調べる', ok: (s) => EXAM_BASE.every((id) => s.seen.includes(id)) },
@@ -625,7 +635,7 @@ function renderStats() {
     ['作った ai', fmt(st.ai)],
     ['作った me', fmt(st.me)],
     ['眠った回数', fmt(state.sleeps)],
-    ['夢', `${fmt(state.yume)}（ti ×${fmt(1 + state.yume)}）`],
+    ['夢', `${fmt(state.yume)}（ti ×${fmt(D(state.yume).add(1))}）`],
     ['実績', `${state.ach.length} / ${ACH.length}`],
   ];
   $('statList').innerHTML = rows.map(([k, v]) => `<div class="srow"><span>${k}</span><b>${v}</b></div>`).join('');
@@ -650,23 +660,23 @@ const chip = (cls, t) => `<span class="chip ${cls}">${t}</span>`;
 const arrow = '<span class="arrow">→</span>';
 const K = (pc, touch) => (IS_TOUCH ? touch : pc);
 const GUIDES = [
-  { id: 'panel', when: (s) => s.tut >= 6 && (s.lv || 0) === 0 && s.st.ai === 0,
+  { id: 'panel', when: (s) => s.tut >= 6 && (s.lv || 0) === 0 && s.st.ai.lte(0),
     h: '装置のパネルを開いてみよう',
     flow: () => chip('ti', '10 ti') + arrow + chip('de', '1 de'),
     p: () => `変換装置の近くで ${K('<kbd>F</kbd>', '「装置」ボタン')} を押すと、パネルが開く。ti が 100,000 貯まると、そこで「ai」が作れるようになる。` },
-  { id: 'ai', when: (s) => s.ti >= AI_COST && s.st.ai === 0 && !s.c2,
+  { id: 'ai', when: (s) => s.ti.gte(AI_COST) && s.st.ai.lte(0) && !s.c2,
     h: 'ai が作れるようになった',
     flow: () => chip('ti', '100,000 ti') + arrow + chip('ai', '1 ai'),
     p: () => `変換装置1で ${K('<kbd>F</kbd>', '「装置」')} → パネルの「作る」。ai は強化と解放に使うお金のようなもの。` },
-  { id: 'up1', when: (s) => (s.ai || 0) >= UPGRADE_COST[0] && (s.lv || 0) === 0,
+  { id: 'up1', when: (s) => s.ai.gte(UPGRADE_COST[0]) && (s.lv || 0) === 0,
     h: '変換装置1を強化できる',
     flow: () => chip('ai', '1 ai') + arrow + chip('box', 'Lv1：15 ti → 2 de'),
     p: () => '強化すると1回で手に入る de が増える。そのかわり持っている de は 0 に戻るので、ti がたくさん貯まってからがおすすめ。' },
-  { id: 'auto', when: (s) => (s.ai || 0) >= AUTO_COST[1] && !s.auto1,
+  { id: 'auto', when: (s) => s.ai.gte(AUTO_COST[1]) && !s.auto1,
     h: '自動化機が買える',
     flow: () => chip('ai', `${fmt(AUTO_COST[1])} ai`) + arrow + chip('box', '自動化機') + arrow + chip('plain', `${AUTO_INTERVAL}秒ごとに自動で変換`),
     p: () => '変換装置1のパネルの一番下で買える。ai を貯めたいときは OFF にしておこう。' },
-  { id: 'c2', when: (s) => (s.ai || 0) >= UNLOCK2_COST && !s.c2,
+  { id: 'c2', when: (s) => s.ai.gte(UNLOCK2_COST) && !s.c2,
     h: '変換装置2を解放できる',
     flow: () => chip('ai', `${fmt(UNLOCK2_COST)} ai`) + arrow + chip('box', '変換装置2') + '<span class="sep2">：</span>' + chip('ti', 'ti') + arrow + chip('ai', 'ai'),
     p: () => `部屋の手前右にある灰色の装置。近づいて ${K('<kbd>F</kbd>', '「装置」')} で解放できる。解放すると、ai はこっちで作るようになる。` },
@@ -674,15 +684,15 @@ const GUIDES = [
     h: 'ai は変換装置2で作る',
     flow: () => chip('ti', '100,000 ti') + arrow + chip('ai', '1 ai'),
     p: () => `変換装置2の近くで ${K('<kbd>E</kbd>', '「作る」')} を押すと ai ができる。強化すると1回で作れる ai が増えるけど、持っている ai は 0 に戻る。` },
-  { id: 'c3', when: (s) => (s.ai || 0) >= UNLOCK3_COST && !s.c3,
+  { id: 'c3', when: (s) => s.ai.gte(UNLOCK3_COST) && !s.c3,
     h: '変換装置3を解放できる',
     flow: () => chip('ai', `${fmt(UNLOCK3_COST)} ai`) + arrow + chip('box', '変換装置3') + '<span class="sep2">：</span>' + chip('ti', 'ti') + arrow + chip('me', 'me'),
     p: () => '部屋の手前左にある装置。me を持っているほど ti が ×(1 + me) 速く貯まる。' },
-  { id: 'me', when: (s) => s.c3 && s.st.me === 0,
+  { id: 'me', when: (s) => s.c3 && s.st.me.lte(0),
     h: 'me を作ってみよう',
     flow: () => chip('ti', `${fmt(ME_LV[0].cost)} ti`) + arrow + chip('me', '1 me'),
     p: () => `変換装置3の近くで ${K('<kbd>E</kbd>', '「作る」')}。me は使っても減らず、持っているだけで倍率になる。` },
-  { id: 'sleep', when: (s) => (s.runTi || 0) >= SLEEP_MIN && (s.sleeps || 0) === 0,
+  { id: 'sleep', when: (s) => s.runTi.gte(SLEEP_MIN) && (s.sleeps || 0) === 0,
     h: 'ベッドで眠れるようになった',
     flow: () => chip('ti', `この周回で ${fmt(SLEEP_MIN)} ti`) + arrow + chip('box', 'ベッドで眠る') + arrow + chip('yume', '夢'),
     p: () => `ベッドの前で ${K('<kbd>F</kbd>', '「眠る」')}。全部消えるかわりに「夢」が残って、ずっと ti が速くなる。もっと貯めてから眠るほど、夢は多くもらえる。` },
@@ -1030,12 +1040,17 @@ function primaryAction(all) {
   }
 }
 
+// 持っている ti で、cost の変換が何回できるか（all=まとめて なら全部、そうでなければ 1回）。Decimal で返す
+const timesFor = (cost, all) => (all ? D(state.ti).div(cost).floor() : D(state.ti).gte(cost) ? new Decimal(1) : ZERO());
+// ti を n × cost 減らす（大きい数では誤差でわずかにマイナスになることがあるので 0 で止める）
+const payTi = (n, cost) => { state.ti = D(state.ti).sub(n.mul(cost)).max(0); };
+
 // ===== ti → de 変換 =====
 function convert(all, fromPanel = false, quiet = false) {
   if (state.tut < 4 || (!fromPanel && !nearConverter())) return;
   const c = conv();
-  const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
-  if (n <= 0) {
+  const n = timesFor(c.cost, all);
+  if (n.lte(0)) {
     if (quiet) return;
     Sound.play('no');
     const p = $('prompt');
@@ -1044,13 +1059,14 @@ function convert(all, fromPanel = false, quiet = false) {
     p.classList.add('shake');
     return;
   }
-  state.ti -= n * c.cost;
-  state.de += n * c.gain;
-  state.st.de += n * c.gain;
+  const got = n.mul(c.gain);
+  payTi(n, c.cost);
+  state.de = D(state.de).add(got);
+  state.st.de = D(state.st.de).add(got);
   machines[1].pulse = 1;
   if (quiet) return;
   Sound.play('de');
-  toast(`+${fmt(n * c.gain)} de`);
+  toast(`+${fmt(got)} de`);
   save();
   if (phase === 'menu') renderMachine();
 }
@@ -1058,15 +1074,16 @@ function convert(all, fromPanel = false, quiet = false) {
 // ===== ti → ai（変換装置2。解放前は装置1のパネルで Lv0 の性能） =====
 function makeAi(all, quiet = false) {
   const c = conv2();
-  const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
-  if (n <= 0) { if (!quiet) Sound.play('no'); return; }
-  state.ti -= n * c.cost;
-  state.ai = (state.ai || 0) + n * c.gain;
-  state.st.ai += n * c.gain;
+  const n = timesFor(c.cost, all);
+  if (n.lte(0)) { if (!quiet) Sound.play('no'); return; }
+  const got = n.mul(c.gain);
+  payTi(n, c.cost);
+  state.ai = D(state.ai).add(got);
+  state.st.ai = D(state.st.ai).add(got);
   machines[state.c2 ? 2 : 1].pulse = 1;
   if (quiet) return;
   Sound.play('ai');
-  toast(`+${fmt(n * c.gain)} ai`);
+  toast(`+${fmt(got)} ai`);
   save();
   if (phase === 'menu') renderMachine();
 }
@@ -1075,14 +1092,15 @@ function makeAi(all, quiet = false) {
 function makeMe(all) {
   if (!state.c3) return;
   const c = conv3();
-  const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
-  if (n <= 0) { Sound.play('no'); return; }
-  state.ti -= n * c.cost;
-  state.me = (state.me || 0) + n * c.gain;
-  state.st.me += n * c.gain;
+  const n = timesFor(c.cost, all);
+  if (n.lte(0)) { Sound.play('no'); return; }
+  const got = n.mul(c.gain);
+  payTi(n, c.cost);
+  state.me = D(state.me).add(got);
+  state.st.me = D(state.st.me).add(got);
   machines[3].pulse = 1;
   Sound.play('me');
-  toast(`+${fmt(n * c.gain)} me`);
+  toast(`+${fmt(got)} me`);
   save();
   if (phase === 'menu') renderMachine();
 }
@@ -1094,8 +1112,8 @@ function buyAuto(id) {
     // 買ったあとは ON / OFF の切り替え
     state[key + 'On'] = !state[key + 'On'];
   } else {
-    if ((state.ai || 0) < AUTO_COST[id]) return;
-    state.ai -= AUTO_COST[id];
+    if (D(state.ai).lt(AUTO_COST[id])) return;
+    state.ai = D(state.ai).sub(AUTO_COST[id]);
     state[key] = true;
     state[key + 'On'] = true;
     Sound.play('buy');
@@ -1119,7 +1137,7 @@ function renderAuto(id, p) {
   if (!state[key]) {
     $(p + 'AutoInfo').innerHTML = `${AUTO_INTERVAL}秒ごとに「まとめて」を自動でやる　／　${fmt(AUTO_COST[id])} ai`;
     b.textContent = '買う';
-    b.disabled = (state.ai || 0) < AUTO_COST[id];
+    b.disabled = D(state.ai).lt(AUTO_COST[id]);
     b.classList.remove('on');
   } else {
     const on = state[key + 'On'];
@@ -1133,10 +1151,10 @@ function renderAuto(id, p) {
 // ===== 変換装置2・3の解放 =====
 function unlockGen(id) {
   const g = GEN[id];
-  if (state[g.unlockedKey] || (state[g.unlockUnit] || 0) < g.unlockCost) return;
+  if (state[g.unlockedKey] || D(state[g.unlockUnit]).lt(g.unlockCost)) return;
   if (!upArmed) { upArmed = true; renderMachine(); return; }
   upArmed = false;
-  state[g.unlockUnit] -= g.unlockCost;
+  state[g.unlockUnit] = D(state[g.unlockUnit]).sub(g.unlockCost);
   state[g.unlockedKey] = true;
   state[g.lvKey] = 0;
   machines[id].pulse = 1.6;
@@ -1150,11 +1168,11 @@ function unlockGen(id) {
 function upgradeGen(id) {
   const g = GEN[id], lv = state[g.lvKey] || 0;
   if (!state[g.unlockedKey] || lv >= g.max) return;
-  if ((state[g.upUnit] || 0) < g.upCost[lv]) return;
+  if (D(state[g.upUnit]).lt(g.upCost[lv])) return;
   if (!upArmed) { upArmed = true; renderMachine(); return; }
   upArmed = false;
-  state[g.upUnit] -= g.upCost[lv];
-  state[g.unit] = 0;
+  state[g.upUnit] = D(state[g.upUnit]).sub(g.upCost[lv]);
+  state[g.unit] = ZERO();
   state[g.lvKey] = lv + 1;
   machines[id].pulse = 1.6;
   Sound.play('up');
@@ -1169,12 +1187,12 @@ function upgrade() {
   const lv = state.lv || 0;
   if (lv >= CONV_MAX) return;
   const cost = UPGRADE_COST[lv];
-  if ((state.ai || 0) < cost) return;
+  if (D(state.ai).lt(cost)) return;
   if (!upArmed) { upArmed = true; renderMachine(); return; }
   upArmed = false;
-  state.ai -= cost;
+  state.ai = D(state.ai).sub(cost);
   state.lv = lv + 1;
-  state.de = 0;
+  state.de = ZERO();
   machines[1].pulse = 1.6;
   Sound.play('up');
   toast(`変換装置1 Lv${state.lv}`);
@@ -1221,17 +1239,17 @@ function lvBar(lv, max) {
   return Array.from({ length: max }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('');
 }
 function renderMachine1() {
-  const lv = state.lv || 0, c = conv(), ai = state.ai || 0;
+  const lv = state.lv || 0, c = conv(), ai = D(state.ai);
   $('mLv').textContent = lv >= CONV_MAX ? 'Lv MAX' : `Lv ${lv}`;
   $('mLvBar').innerHTML = Array.from({ length: CONV_MAX }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('');
   $('mConvRate').textContent = `${c.cost} ti → ${c.gain} de`;
-  $('mConv1').disabled = state.ti < c.cost;
-  $('mConvAll').disabled = state.ti < c.cost * 2;
+  $('mConv1').disabled = D(state.ti).lt(c.cost);
+  $('mConvAll').disabled = D(state.ti).lt(c.cost * 2);
   // ai づくりは、変換装置2を解放するまでは装置1で（Lv0 の性能）
   $('mAiRow').style.display = state.c2 ? 'none' : '';
   $('mAiRate').textContent = `${fmt(AI_COST)} ti → 1 ai`;
-  $('mAi1').disabled = state.ti < AI_COST;
-  $('mAiAll').disabled = state.ti < AI_COST * 2;
+  $('mAi1').disabled = D(state.ti).lt(AI_COST);
+  $('mAiAll').disabled = D(state.ti).lt(AI_COST * 2);
   $('mAiMoved').style.display = state.c2 ? '' : 'none';
   const up = $('mUp');
   if (lv >= CONV_MAX) {
@@ -1244,7 +1262,7 @@ function renderMachine1() {
     const next = CONV_LV[lv + 1];
     $('mUpInfo').innerHTML = `Lv${lv + 1}：<b>${next.cost} ti → ${next.gain} de</b>　／　${fmt(UPGRADE_COST[lv])} ai`;
     $('mUpWarn').style.visibility = 'visible';
-    up.disabled = ai < UPGRADE_COST[lv];
+    up.disabled = ai.lt(UPGRADE_COST[lv]);
     if (up.disabled) upArmed = false;
     up.textContent = upArmed ? '本当に？' : '強化';
     up.classList.toggle('armed', upArmed);
@@ -1258,14 +1276,14 @@ function renderMachine1() {
 function renderGen(id) {
   const g = GEN[id], p = g.p;
   const lv = state[g.lvKey] || 0, unlocked = !!state[g.unlockedKey];
-  const has = (k) => state[k] || 0;
+  const has = (k) => D(state[k]);
   $(p + 'Lock').style.display = unlocked ? 'none' : '';
   $(p + 'Body').style.display = unlocked ? '' : 'none';
   $(p + 'Lv').textContent = !unlocked ? 'LOCKED' : lv >= g.max ? 'Lv MAX' : `Lv ${lv}`;
   $(p + 'LvBar').innerHTML = lvBar(unlocked ? lv : 0, g.max);
   if (!unlocked) {
     const b = $(p + 'Unlock');
-    b.disabled = has(g.unlockUnit) < g.unlockCost;
+    b.disabled = has(g.unlockUnit).lt(g.unlockCost);
     if (b.disabled) upArmed = false;
     b.textContent = upArmed ? '本当に？' : '解放する';
     b.classList.toggle('armed', upArmed);
@@ -1273,8 +1291,8 @@ function renderGen(id) {
   } else {
     const c = g.table[Math.min(lv, g.max)];
     $(p + 'Rate').textContent = `${fmt(c.cost)} ti → ${c.gain} ${g.unit}`;
-    $(p + 'Make1').disabled = state.ti < c.cost;
-    $(p + 'MakeAll').disabled = state.ti < c.cost * 2;
+    $(p + 'Make1').disabled = D(state.ti).lt(c.cost);
+    $(p + 'MakeAll').disabled = D(state.ti).lt(c.cost * 2);
     const up = $(p + 'Up');
     if (lv >= g.max) {
       $(p + 'UpInfo').textContent = 'これ以上は強化できない';
@@ -1286,7 +1304,7 @@ function renderGen(id) {
       const next = g.table[lv + 1];
       $(p + 'UpInfo').innerHTML = `Lv${lv + 1}：<b>${fmt(next.cost)} ti → ${next.gain} ${g.unit}</b>　／　${fmt(g.upCost[lv])} ${g.upUnit}`;
       $(p + 'UpWarn').style.visibility = 'visible';
-      up.disabled = has(g.upUnit) < g.upCost[lv];
+      up.disabled = has(g.upUnit).lt(g.upCost[lv]);
       if (up.disabled) upArmed = false;
       up.textContent = upArmed ? '本当に？' : '強化';
       up.classList.toggle('armed', upArmed);
@@ -1309,18 +1327,18 @@ function openSleep() {
   $('sleepPanel').classList.add('active');
 }
 function renderSleep() {
-  const gain = yumeGain(), y = state.yume || 0;
-  $('sGain').textContent = gain >= 1 ? `+${fmt(gain)}` : '0';
-  $('sMult').textContent = `ti ×${fmt(1 + y)} → ×${fmt(1 + y + gain)}`;
+  const gain = yumeGain(), y = D(state.yume);
+  $('sGain').textContent = gain.gte(1) ? `+${fmt(gain)}` : '0';
+  $('sMult').textContent = `ti ×${fmt(y.add(1))} → ×${fmt(y.add(1).add(gain))}`;
   $('sRun').textContent = `この周回で消した ti：${fmt(state.runTi)}（${fmt(SLEEP_MIN)} から眠れる）`;
   const b = $('btnSleep');
-  b.disabled = gain < 1;
+  b.disabled = gain.lt(1);
   if (b.disabled) upArmed = false;
   b.textContent = upArmed ? '本当に？' : '眠る';
   b.classList.toggle('armed', upArmed);
 }
 function trySleep() {
-  if (openPanel !== 'sleepPanel' || yumeGain() < 1) return;
+  if (openPanel !== 'sleepPanel' || yumeGain().lt(1)) return;
   if (!upArmed) { upArmed = true; renderSleep(); return; }
   upArmed = false;
   sleepAndWake();
@@ -1339,8 +1357,8 @@ async function sleepAndWake() {
   await sleep(900);
   if (!alive()) return;
   // ここで時間が消える：資源と装置は 0 に、夢・自動化機・実績・統計は残る
-  Object.assign(state, { ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: 0 });
-  state.yume = (state.yume || 0) + gain;
+  Object.assign(state, { ti: ZERO(), de: ZERO(), ai: ZERO(), me: ZERO(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: ZERO() });
+  state.yume = D(state.yume).add(gain);
   state.sleeps = (state.sleeps || 0) + 1;
   state.x = BED.x; state.z = BED.z - 0.75; camY = 0.85; yaw = -2.48; pitch = 1.45;
   save();
@@ -1379,8 +1397,8 @@ function toast(text) {
 const TUT = {
   1: { h: 'WASD で歩いてみよう', p: '<kbd>W</kbd> 前　<kbd>A</kbd> 左　<kbd>S</kbd> 後ろ　<kbd>D</kbd> 右　<kbd>Shift</kbd> を押しながらで走る', prog: () => tutMoved / 4 },
   2: { h: 'マウスで周りを見回そう', p: '画面をクリックするとマウスで視点が動きます（<kbd>Esc</kbd> で一時停止）', prog: () => tutLooked / 3 },
-  3: { h: 'ここでは時間が ti になる', p: '1 秒ごとに <b>1 ti</b> 貯まっていく。10 ti 貯まるまで待ってみよう', prog: () => state.ti / CONVERT_COST },
-  4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて <kbd>E</kbd> を押すと <b>10 ti → 1 de</b>', prog: () => (state.de >= 1 ? 1 : 0) },
+  3: { h: 'ここでは時間が ti になる', p: '1 秒ごとに <b>1 ti</b> 貯まっていく。10 ti 貯まるまで待ってみよう', prog: () => D(state.ti).toNumber() / CONVERT_COST },
+  4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて <kbd>E</kbd> を押すと <b>10 ti → 1 de</b>', prog: () => (D(state.de).gte(1) ? 1 : 0) },
   5: { h: 'de が多いほど ti が速く貯まる', p: '1 秒の ti × (1 + 持っている de)。あとは放っておくだけ。わからなくなったら一時停止の「あそびかた」へ。', prog: () => tutTimer / 7 },
 };
 const TUT_LAST = 5;
@@ -1480,17 +1498,17 @@ function updateHud() {
   $('tiVal').textContent = fmt(state.ti);
   $('tiRate').textContent = fmt(rate());
   $('deVal').textContent = fmt(state.de);
-  $('mult').textContent = fmt(1 + state.de);
-  $('aiVal').textContent = fmt(state.ai || 0);
-  $('meVal').textContent = fmt(state.me || 0);
-  $('meMult').textContent = fmt(1 + (state.me || 0));
-  $('hudMe').classList.toggle('show', !!state.c3 || (state.me || 0) > 0);
-  $('yumeChip').style.display = (state.yume || 0) > 0 ? '' : 'none';
-  $('yumeChip').textContent = `夢 ×${fmt(1 + (state.yume || 0))}`;
+  $('mult').textContent = fmt(D(state.de).add(1));
+  $('aiVal').textContent = fmt(state.ai);
+  $('meVal').textContent = fmt(state.me);
+  $('meMult').textContent = fmt(D(state.me).add(1));
+  $('hudMe').classList.toggle('show', !!state.c3 || D(state.me).gt(0));
+  $('yumeChip').style.display = D(state.yume).gt(0) ? '' : 'none';
+  $('yumeChip').textContent = `夢 ×${fmt(D(state.yume).add(1))}`;
   const lvTxt = (lv, max) => (lv >= max ? 'MAX' : lv);
   $('lvChip').textContent = `装置1 Lv ${lvTxt(state.lv || 0, CONV_MAX)}` + (state.c2 ? `・装置2 Lv ${lvTxt(state.lv2 || 0, AI_MAX)}` : '') + (state.c3 ? `・装置3 Lv ${lvTxt(state.lv3 || 0, ME_MAX)}` : '');
   // ai は、作れるようになったら（または持っていたら）表示
-  $('hudAi').classList.toggle('show', machineUnlocked() && ((state.ai || 0) > 0 || (state.lv || 0) > 0 || state.ti >= AI_COST));
+  $('hudAi').classList.toggle('show', machineUnlocked() && (D(state.ai).gt(0) || (state.lv || 0) > 0 || D(state.ti).gte(AI_COST)));
   if (phase === 'menu') renderMachine();
 
   const prompt = $('prompt');
@@ -1527,17 +1545,18 @@ function updateHud() {
   const c = near === 1 ? conv() : near === 2 ? conv2() : conv3();
   const unit = near === 1 ? 'de' : near === 2 ? 'ai' : 'me';
   $('btnAct').textContent = near === 1 ? '変換' : '作る';
-  const can = state.ti >= c.cost;
+  const can = D(state.ti).gte(c.cost);
+  const need = () => fmt(new Decimal(c.cost).sub(state.ti).ceil());
   const rateTxt = `${fmt(c.cost)} ti → ${c.gain} ${unit}`;
   prompt.classList.toggle('off', !can);
   act.classList.toggle('off', !can);
   if (IS_TOUCH) {
-    $('promptText').textContent = can ? `${rateTxt} にできる` : `あと ${fmt(Math.ceil(c.cost - state.ti))} ti 必要`;
+    $('promptText').textContent = can ? `${rateTxt} にできる` : `あと ${need()} ti 必要`;
     return;
   }
   $('promptText').innerHTML = (can
     ? `${rateTxt}　<span class="sub"><kbd>E</kbd> 1回　<kbd>Shift</kbd>+<kbd>E</kbd> まとめて</span>`
-    : `あと ${fmt(Math.ceil(c.cost - state.ti))} ti 必要`) + panelHint;
+    : `あと ${need()} ti 必要`) + panelHint;
 }
 
 // ===== メインループ =====
@@ -1550,17 +1569,18 @@ function frame(now) {
   lastT = now;
   const t = now / 1000;
 
+  sanitize(state); // 大きな数の形をそろえる（読み込み直後・眠った直後など）
   // 時間を消して ti を稼ぐ（放置ゲームなので一時停止中も貯まる）
   if (state.tut >= 3 && phase !== 'wake') {
-    const r = rate(), gain = r * realDt;
-    state.ti += gain;
-    state.runTi = (state.runTi || 0) + gain;
-    state.st.totalTi += gain;
-    if (r > state.st.bestRate) state.st.bestRate = r;
+    const r = rate(), gain = r.mul(realDt);
+    state.ti = D(state.ti).add(gain);
+    state.runTi = D(state.runTi).add(gain);
+    state.st.totalTi = D(state.st.totalTi).add(gain);
+    if (r.gt(state.st.bestRate)) state.st.bestRate = r;
   }
   state.st.play += realDt;
   runAutos(realDt);
-  sanitize(state); // ∞・NaN を直す（表示より前に）
+  sanitize(state); // 壊れた値を直す（表示より前に）
 
   if (phase === 'play') move(dt);
   camera.position.set(state.x, camY, state.z);
@@ -1688,7 +1708,7 @@ window.TDG = {
     init();
     Sound.ensure(); // ボタンを押した直後なので音を鳴らせる
     if (window.TDG_resetStick) window.TDG_resetStick();
-    state = isNew ? newState() : load() || newState();
+    state = sanitize(isNew ? newState() : load() || newState());
     yaw = state.yaw; pitch = state.pitch || 0; camY = EYE;
     tutMoved = tutLooked = tutTimer = tutDoneWait = 0;
     leaving = false;

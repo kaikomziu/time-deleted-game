@@ -1,7 +1,7 @@
 # Time Deleted Game. v0.7.0
 
 時間を消していく放置ゲーム（three.js の 3D）。
-このゲームは Roblox の「時間を無駄にする」というゲームにインスパイアされています。
+このゲームは「時間を無駄にする」、Cookie Clicker、Revolution Idle 等の様々なゲームにインスパイアを受けています。
 
 - 遊ぶ: https://kaikomziu.github.io/time-deleted-game/
 - 操作（PC）: WASD で移動、Shift で走る、マウスで視点、E で変換・調べる（Shift+E でまとめて）、F で装置のパネル / ベッドで眠る、Esc で一時停止
