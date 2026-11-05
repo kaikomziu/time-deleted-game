@@ -96,7 +96,7 @@ let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 const newStats = () => ({ play: 0, totalTi: 0, bestRate: 0, de: 0, ai: 0, me: 0 });
 const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
   auto1: false, auto1On: true, auto2: false, auto2On: true,
-  yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
+  yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
 // 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
 const rate = () => 1 * (1 + state.de) * (1 + (state.me || 0)) * (1 + (state.yume || 0));
@@ -616,16 +616,96 @@ function renderStats() {
   $('statList').innerHTML = rows.map(([k, v]) => `<div class="srow"><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function openSub(id) {
-  if (id === 'achPanel') renderAch(); else renderStats();
+  if (id === 'achPanel') renderAch(); else if (id === 'statsPanel') renderStats();
+  if (id === 'help') { window.TDG_helpFrom = 'pause'; $('help').querySelector('.panel').scrollTop = 0; }
   $('pause').classList.remove('active');
   $(id).classList.add('active');
 }
 function closeSub() {
   $('achPanel').classList.remove('active');
   $('statsPanel').classList.remove('active');
+  $('help').classList.remove('active');
   $('pause').classList.add('active');
 }
-const subOpen = () => $('achPanel').classList.contains('active') || $('statsPanel').classList.contains('active');
+const subOpen = () => ['achPanel', 'statsPanel', 'help'].some((id) => $(id).classList.contains('active'));
+
+// ===== ガイド（チュートリアルのあと、新しいことができるようになったときに1回だけ出る） =====
+// when が「いまちょうど役に立つ」ときだけ true になるようにしておく（もう通り過ぎたものは出さない）
+const chip = (cls, t) => `<span class="chip ${cls}">${t}</span>`;
+const arrow = '<span class="arrow">→</span>';
+const K = (pc, touch) => (IS_TOUCH ? touch : pc);
+const GUIDES = [
+  { id: 'panel', when: (s) => s.tut >= 6 && (s.lv || 0) === 0 && s.st.ai === 0,
+    h: '装置のパネルを開いてみよう',
+    flow: () => chip('ti', '10 ti') + arrow + chip('de', '1 de'),
+    p: () => `変換装置の近くで ${K('<kbd>F</kbd>', '「装置」ボタン')} を押すと、パネルが開く。ti が 100,000 貯まると、そこで「ai」が作れるようになる。` },
+  { id: 'ai', when: (s) => s.ti >= AI_COST && s.st.ai === 0 && !s.c2,
+    h: 'ai が作れるようになった',
+    flow: () => chip('ti', '100,000 ti') + arrow + chip('ai', '1 ai'),
+    p: () => `変換装置1で ${K('<kbd>F</kbd>', '「装置」')} → パネルの「作る」。ai は強化と解放に使うお金のようなもの。` },
+  { id: 'up1', when: (s) => (s.ai || 0) >= UPGRADE_COST[0] && (s.lv || 0) === 0,
+    h: '変換装置1を強化できる',
+    flow: () => chip('ai', '1 ai') + arrow + chip('box', 'Lv1：15 ti → 2 de'),
+    p: () => '強化すると1回で手に入る de が増える。そのかわり持っている de は 0 に戻るので、ti がたくさん貯まってからがおすすめ。' },
+  { id: 'auto', when: (s) => (s.ai || 0) >= AUTO_COST[1] && !s.auto1,
+    h: '自動化機が買える',
+    flow: () => chip('ai', `${fmt(AUTO_COST[1])} ai`) + arrow + chip('box', '自動化機') + arrow + chip('plain', `${AUTO_INTERVAL}秒ごとに自動で変換`),
+    p: () => '変換装置1のパネルの一番下で買える。ai を貯めたいときは OFF にしておこう。' },
+  { id: 'c2', when: (s) => (s.ai || 0) >= UNLOCK2_COST && !s.c2,
+    h: '変換装置2を解放できる',
+    flow: () => chip('ai', `${fmt(UNLOCK2_COST)} ai`) + arrow + chip('box', '変換装置2') + '<span class="sep2">：</span>' + chip('ti', 'ti') + arrow + chip('ai', 'ai'),
+    p: () => `部屋の手前右にある灰色の装置。近づいて ${K('<kbd>F</kbd>', '「装置」')} で解放できる。解放すると、ai はこっちで作るようになる。` },
+  { id: 'c2open', when: (s) => s.c2 && (s.lv2 || 0) === 0 && !s.c3,
+    h: 'ai は変換装置2で作る',
+    flow: () => chip('ti', '100,000 ti') + arrow + chip('ai', '1 ai'),
+    p: () => `変換装置2の近くで ${K('<kbd>E</kbd>', '「作る」')} を押すと ai ができる。強化すると1回で作れる ai が増えるけど、持っている ai は 0 に戻る。` },
+  { id: 'c3', when: (s) => (s.ai || 0) >= UNLOCK3_COST && !s.c3,
+    h: '変換装置3を解放できる',
+    flow: () => chip('ai', `${fmt(UNLOCK3_COST)} ai`) + arrow + chip('box', '変換装置3') + '<span class="sep2">：</span>' + chip('ti', 'ti') + arrow + chip('me', 'me'),
+    p: () => '部屋の手前左にある装置。me を持っているほど ti が ×(1 + me) 速く貯まる。' },
+  { id: 'me', when: (s) => s.c3 && s.st.me === 0,
+    h: 'me を作ってみよう',
+    flow: () => chip('ti', `${fmt(ME_LV[0].cost)} ti`) + arrow + chip('me', '1 me'),
+    p: () => `変換装置3の近くで ${K('<kbd>E</kbd>', '「作る」')}。me は使っても減らず、持っているだけで倍率になる。` },
+  { id: 'sleep', when: (s) => (s.runTi || 0) >= SLEEP_MIN && (s.sleeps || 0) === 0,
+    h: 'ベッドで眠れるようになった',
+    flow: () => chip('ti', `この周回で ${fmt(SLEEP_MIN)} ti`) + arrow + chip('box', 'ベッドで眠る') + arrow + chip('yume', '夢'),
+    p: () => `ベッドの前で ${K('<kbd>F</kbd>', '「眠る」')}。全部消えるかわりに「夢」が残って、ずっと ti が速くなる。もっと貯めてから眠るほど、夢は多くもらえる。` },
+];
+let guideTimer = 0, guideCheck = 0;
+function showGuide(g) {
+  $('guideTitle').textContent = g.h;
+  $('guideFlow').innerHTML = g.flow ? `<div class="flow">${g.flow()}</div>` : '';
+  $('guideText').innerHTML = g.p();
+  $('guideHint').textContent = IS_TOUCH ? 'くわしくは 一時停止 →「あそびかた」' : 'くわしくは ESC →「あそびかた」';
+  const el = $('guide');
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  guideTimer = 14;
+  Sound.play('look');
+}
+function hideGuide() {
+  $('guide').classList.remove('show');
+  guideTimer = 0;
+}
+function updateGuides(realDt) {
+  if (guideTimer > 0) {
+    guideTimer -= realDt;
+    if (guideTimer <= 0) hideGuide();
+    return;
+  }
+  if (phase !== 'play' || state.tut < 6) return;
+  guideCheck += realDt;
+  if (guideCheck < 1) return;
+  guideCheck = 0;
+  for (const g of GUIDES) {
+    if (state.guides.includes(g.id) || !g.when(state)) continue;
+    state.guides.push(g.id);
+    showGuide(g);
+    return;
+  }
+}
 
 // ===== 音（Web Audio で作る。ファイルは使わない） =====
 const Sound = (() => {
@@ -826,6 +906,8 @@ function bindInput() {
   $('sClose').addEventListener('click', closeMachine);
   $('sleepPanel').addEventListener('click', (e) => { if (e.target.id === 'sleepPanel') closeMachine(); });
   // 一時停止メニューの実績・統計
+  $('btnHelpP').addEventListener('click', () => openSub('help'));
+  $('guideClose').addEventListener('click', hideGuide);
   $('btnAch').addEventListener('click', () => openSub('achPanel'));
   $('btnStats').addEventListener('click', () => openSub('statsPanel'));
   $('achClose').addEventListener('click', closeSub);
@@ -1284,7 +1366,7 @@ const TUT = {
   2: { h: 'マウスで周りを見回そう', p: '画面をクリックするとマウスで視点が動きます（<kbd>Esc</kbd> で一時停止）', prog: () => tutLooked / 3 },
   3: { h: 'ここでは時間が ti になる', p: '1 秒ごとに <b>1 ti</b> 貯まっていく。10 ti 貯まるまで待ってみよう', prog: () => state.ti / CONVERT_COST },
   4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて <kbd>E</kbd> を押すと <b>10 ti → 1 de</b>', prog: () => (state.de >= 1 ? 1 : 0) },
-  5: { h: 'de が多いほど ti が速く貯まる', p: '1 秒の ti × (1 + 持っている de)。あとは放っておくだけ。', prog: () => tutTimer / 7 },
+  5: { h: 'de が多いほど ti が速く貯まる', p: '1 秒の ti × (1 + 持っている de)。あとは放っておくだけ。わからなくなったら一時停止の「あそびかた」へ。', prog: () => tutTimer / 7 },
 };
 const TUT_LAST = 5;
 // タッチ端末では操作の説明だけ差し替える
@@ -1512,6 +1594,7 @@ function frame(now) {
     msgTimer -= dt;
     if (msgTimer <= 0) $('msg').classList.remove('show');
   }
+  updateGuides(realDt);
   // 実績は1秒に1回チェック
   achTimer += realDt;
   if (achTimer > 1) { achTimer = 0; checkAch(); }
@@ -1544,6 +1627,7 @@ function load() {
     d.st = { ...newStats(), ...(s.st || {}) };
     d.ach = Array.isArray(s.ach) ? s.ach : [];
     d.seen = Array.isArray(s.seen) ? s.seen : [];
+    d.guides = Array.isArray(s.guides) ? s.guides : [];
     return d;
   } catch { return null; }
 }
@@ -1564,8 +1648,9 @@ function resume() {
 function toTitle() {
   wakeToken++;
   leaving = true;
-  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'achPanel', 'statsPanel']) $(id).classList.remove('active');
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'achPanel', 'statsPanel', 'help']) $(id).classList.remove('active');
   $('msg').classList.remove('show');
+  hideGuide();
   openPanel = null;
   save();
   Sound.suspend();

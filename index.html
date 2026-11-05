@@ -109,6 +109,7 @@
   #title.active .menu button:nth-child(1) { animation-delay: 0.5s; }
   #title.active .menu button:nth-child(2) { animation-delay: 0.6s; }
   #title.active .menu button:nth-child(3) { animation-delay: 0.7s; }
+  #title.active .menu button:nth-child(4) { animation-delay: 0.8s; }
   .menu button::before { content: ""; position: absolute; inset: 0; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.35s cubic-bezier(.7,0,.2,1); z-index: -1; }
   .menu button > * { position: relative; transition: color 0.25s, transform 0.35s cubic-bezier(.2,.7,.2,1); }
   .menu .num { font-family: var(--mono); font-size: 12px; color: var(--accent); width: 22px; }
@@ -341,6 +342,48 @@
   .toast { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 22px; color: var(--accent); letter-spacing: 0.1em; white-space: nowrap; animation: toastUp 1.4s ease-out forwards; }
   @keyframes toastUp { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -60px); } }
 
+  /* ===== あそびかた ===== */
+  #help .panel { width: min(640px, 94vw); max-height: 92vh; overflow-y: auto; }
+  .chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; border: 1px solid var(--ink); background: #fff; color: var(--ink); }
+  .chip.de { background: var(--ink); color: #fff; }
+  .chip.ai { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip.me { border-color: var(--accent); color: var(--accent); }
+  .chip.yume { background: #fff; border-style: dashed; }
+  .chip.box { border-radius: 6px; font-family: inherit; font-weight: 700; }
+  .chip.plain { border-color: rgba(0,0,0,0.15); font-family: inherit; }
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .flow .arrow { color: var(--accent); font-weight: 900; }
+  .flow .op, .flow .num1, .flow .paren, .flow .sep2 { font-family: var(--mono); font-size: 13px; }
+  .flow .paren { display: inline-flex; align-items: center; gap: 4px; }
+  .road { display: flex; gap: 6px; margin: 4px 0 14px; flex-wrap: wrap; }
+  .road div { flex: 1; min-width: 90px; padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,0.04); font-size: 12px; font-weight: 700; }
+  .road b { display: block; font-family: var(--mono); font-size: 10px; color: var(--accent); letter-spacing: 0.2em; font-weight: 400; }
+  .hsec { display: flex; gap: 16px; padding: 16px 0; border-top: 1px solid rgba(0,0,0,0.08); }
+  .hno { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: 0.2em; padding-top: 4px; flex-shrink: 0; }
+  .hbody h3 { font-size: 16px; font-weight: 900; letter-spacing: 0.03em; }
+  .hbody p { font-size: 13px; color: #444; line-height: 1.85; }
+  .hbody p b { color: var(--ink); }
+  .lvtable { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .lvtable div { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border-radius: 6px; background: rgba(0,0,0,0.04); }
+  .lvtable span { color: var(--accent); margin-right: 6px; }
+  @media (max-width: 480px) { .hsec { flex-direction: column; gap: 4px; } }
+
+  /* ===== ガイドのカード ===== */
+  #guide { position: absolute; left: 50%; bottom: 5vh; width: min(520px, 90vw); transform: translate(-50%, 20px); padding: 18px 24px 16px; border-radius: 16px; background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05); opacity: 0; transition: opacity 0.5s, transform 0.5s cubic-bezier(.2,.7,.2,1); pointer-events: none; }
+  #guide.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #guide .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: var(--accent); margin-bottom: 6px; }
+  #guide h3 { font-size: 19px; font-weight: 900; letter-spacing: 0.03em; margin-bottom: 2px; padding-right: 26px; }
+  #guide p { font-size: 13px; color: #555; line-height: 1.8; }
+  #guide .gflow:empty { display: none; }
+  #guide .ghint { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--muted); margin-top: 8px; }
+  #guideClose { position: absolute; right: 12px; top: 12px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: var(--ink); cursor: pointer; font-size: 12px; }
+  #guideClose:hover { background: var(--ink); color: #fff; }
+  body.touch #guide { left: 3vw; right: calc(3vw + 52px); width: auto; top: calc(3vh + env(safe-area-inset-top) + 190px); bottom: auto; transform: translateY(-12px); padding: 14px 16px 12px; }
+  body.touch #guide.show { transform: none; }
+  body.touch #guide h3 { font-size: 15px; }
+  body.touch #guide p { font-size: 11px; line-height: 1.6; }
+  @media (min-width: 700px) { body.touch #guide { left: auto; width: min(380px, 52vw); top: calc(3vh + env(safe-area-inset-top)); } }
+
   /* チュートリアルカード */
   #tut { position: absolute; left: 50%; bottom: 5vh; width: min(520px, 90vw); transform: translate(-50%, 20px); padding: 20px 26px 18px; border-radius: 16px; background: rgba(255,255,255,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05); opacity: 0; transition: opacity 0.5s, transform 0.5s cubic-bezier(.2,.7,.2,1); }
   #tut.show { opacity: 1; transform: translate(-50%, 0); }
@@ -449,6 +492,7 @@
     <button id="btnStart"><span class="num">01</span><span class="jp">スタート</span><span class="en">START</span></button>
     <button id="btnSettings"><span class="num">02</span><span class="jp">設定</span><span class="en">SETTINGS</span></button>
     <button id="btnContinue"><span class="num">03</span><span class="jp">途中から</span><span class="en">CONTINUE</span></button>
+    <button id="btnHelp"><span class="num">04</span><span class="jp">あそびかた</span><span class="en">HOW TO PLAY</span></button>
   </div>
   <div class="status">
     <div class="lost"><span class="dot"></span>これまでに消した時間<b id="lostTime">00:00:00</b></div>
@@ -480,6 +524,14 @@
     <div id="prompt"><span class="key">E</span><span id="promptText"></span></div>
     <div id="toasts"></div>
     <div id="msg"><div class="kicker" id="msgName"></div><p id="msgText"></p></div>
+    <div id="guide">
+      <button id="guideClose" aria-label="閉じる">✕</button>
+      <div class="kicker">GUIDE</div>
+      <h3 id="guideTitle"></h3>
+      <div class="gflow" id="guideFlow"></div>
+      <p id="guideText"></p>
+      <div class="ghint" id="guideHint"></div>
+    </div>
     <div id="tut">
       <div class="kicker" id="tutKicker"></div>
       <h3 id="tutTitle"></h3>
@@ -620,13 +672,101 @@
   </div>
 </div>
 
+<!-- あそびかた -->
+<div id="help" class="overlay">
+  <div class="panel">
+    <div class="kicker">HOW TO PLAY</div>
+    <h2>あそびかた</h2>
+    <p class="ptext">この部屋では、時間が <span class="chip ti">ti</span> になって消えていく。ti を別のものに変えて、もっと速く時間を消していこう。</p>
+
+    <div class="road">
+      <div><b>1</b>de を集める</div><div><b>2</b>ai を作る</div><div><b>3</b>装置を強化</div><div><b>4</b>装置2・3</div><div><b>5</b>眠る</div>
+    </div>
+
+    <section class="hsec">
+      <div class="hno">01</div>
+      <div class="hbody">
+        <h3>毎秒の ti</h3>
+        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
+        <p>de・me・夢 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">02</div>
+      <div class="hbody">
+        <h3>変換装置1（部屋の真ん中）</h3>
+        <div class="flow"><span class="chip ti">10 ti</span><span class="arrow">→</span><span class="chip de">1 de</span></div>
+        <p>近づいて <kbd>E</kbd>（スマホは「変換」）で1回、<kbd>Shift</kbd>+<kbd>E</kbd>（「まとめて」）で持っている ti を全部 de にする。<b>de は使っても減らない</b>ので、どんどん変えてOK。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">03</div>
+      <div class="hbody">
+        <h3>ai を作る</h3>
+        <div class="flow"><span class="chip ti">100,000 ti</span><span class="arrow">→</span><span class="chip ai">1 ai</span></div>
+        <p>ai は<b>強化と解放に使うお金</b>のようなもの。装置の近くで <kbd>F</kbd>（スマホは「装置」）を押すとパネルが開き、そこで作れる。ai を作るぶんの ti は、de に変えずに残しておこう。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">04</div>
+      <div class="hbody">
+        <h3>強化（アップグレード）</h3>
+        <div class="flow"><span class="chip ai">ai</span><span class="arrow">→</span><span class="chip box">装置 Lv ↑</span><span class="arrow">→</span><span class="chip de">1回で手に入る量 ↑</span></div>
+        <div class="lvtable"><div><span>Lv0</span>10 ti → 1 de</div><div><span>Lv1</span>15 ti → 2 de</div><div><span>Lv5</span>90 ti → 10 de</div></div>
+        <p>強化すると、1回の変換で手に入る量が増える（最大 Lv5）。そのかわり、<b>その装置で作ったもの（装置1なら de）は 0 に戻る</b>。すぐ取り返せるくらい ti が貯まってから強化するのがコツ。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">05</div>
+      <div class="hbody">
+        <h3>変換装置2・3</h3>
+        <div class="flow"><span class="chip ai">10,000 ai</span><span class="arrow">→</span><span class="chip box">装置2 解放</span><span class="sep2">：</span><span class="chip ti">ti</span><span class="arrow">→</span><span class="chip ai">ai</span></div>
+        <div class="flow"><span class="chip ai">1,000,000 ai</span><span class="arrow">→</span><span class="chip box">装置3 解放</span><span class="sep2">：</span><span class="chip ti">ti</span><span class="arrow">→</span><span class="chip me">me</span></div>
+        <p>装置2（手前右）は ai 専用。解放すると ai はここで作るようになり、強化すると1回で作れる ai が増える。装置3（手前左）は me 専用で、<b>me は ti に ×(1 + me) の倍率</b>をかける。どちらも強化すると、その装置で作るもの（ai / me）が 0 に戻る。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">06</div>
+      <div class="hbody">
+        <h3>自動化機</h3>
+        <div class="flow"><span class="chip ai">25 ai</span><span class="arrow">→</span><span class="chip box">自動化機</span><span class="arrow">→</span><span class="chip plain">5秒ごとに「まとめて」</span></div>
+        <p>装置1・2のパネルで買える（装置2用は 50,000 ai）。装置の横に黒い箱が置かれ、ON の間は自動で変換してくれる。<b>ai を貯めたいときは OFF</b> にしよう（自動化機1は ti を全部 de にしてしまうため）。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">07</div>
+      <div class="hbody">
+        <h3>眠る（転生）</h3>
+        <div class="flow"><span class="chip ti">この周回で 10億 ti</span><span class="arrow">→</span><span class="chip box">ベッドで眠る</span><span class="arrow">→</span><span class="chip yume">夢</span></div>
+        <p>ベッドの前で <kbd>F</kbd>（スマホは「眠る」）。<b>ti・de・ai・me と装置のレベル・解放が全部消える</b>かわりに、夢が残る。夢は ti に ×(1 + 夢) の倍率をかけて、ずっと消えない。もらえる夢は √(この周回で消した ti ÷ 10億)。自動化機・実績・統計も残る。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">08</div>
+      <div class="hbody">
+        <h3>そのほか</h3>
+        <p>部屋の物（時計・ベッド・ノートなど）は近づいて <kbd>E</kbd> で調べられる。進めると部屋が少しずつ変わる。実績・統計・このページは一時停止メニューから見られる。数字の表示（K・M・B や 万・億・兆）は設定で変えられる。</p>
+      </div>
+    </section>
+
+    <div class="btns"><span></span><button id="helpClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
 <!-- 一時停止 -->
 <div id="pause" class="overlay">
   <div class="panel">
     <div class="kicker">PAUSED</div>
     <h2>一時停止</h2>
     <p>止まっている間も、時間は消え続けている。</p>
-    <div class="pause-links"><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
+    <div class="pause-links"><button id="btnHelpP" class="btn-line">あそびかた</button><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
     <div class="btns">
       <button id="btnToTitle" class="btn-ghost">タイトルへ</button>
       <button id="btnResume" class="btn-solid">再開</button>
@@ -852,6 +992,13 @@
   }
   $('btnStart').addEventListener('click', () => openSlots('new'));
   $('btnContinue').addEventListener('click', () => openSlots('continue'));
+  // あそびかた（タイトルからも、一時停止メニューからも開く）
+  $('btnHelp').addEventListener('click', () => { window.TDG_helpFrom = 'title'; $('help').classList.add('active'); $('help').querySelector('.panel').scrollTop = 0; });
+  $('helpClose').addEventListener('click', () => {
+    $('help').classList.remove('active');
+    if (window.TDG_helpFrom === 'pause') $('pause').classList.add('active');
+  });
+  $('help').addEventListener('click', (e) => { if (e.target.id === 'help') $('helpClose').click(); });
   $('btnCloseSlots').addEventListener('click', () => $('slots').classList.remove('active'));
   $('slots').addEventListener('click', e => { if (e.target.id === 'slots') $('slots').classList.remove('active'); });
   $('btnResume').addEventListener('click', () => TDG.resume());
