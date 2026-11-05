@@ -59,6 +59,12 @@
   #intro .tag { font-family: var(--mono); font-size: 12px; letter-spacing: 0.4em; color: var(--accent); margin-bottom: 26px; opacity: 0; animation: fadeUp 1s ease forwards 0.2s; }
   #intro p { font-size: clamp(16px, 2.3vw, 26px); font-weight: 300; line-height: 1.9; letter-spacing: 0.06em; padding: 0 24px; opacity: 0; animation: fadeUp 1.2s ease forwards 0.5s; }
   #intro p b { font-weight: 700; }
+  /* β版の警告 */
+  #intro .beta { display: flex; align-items: center; gap: 18px; margin: 34px 24px 0; padding: 16px 22px; border: 1px solid rgba(210,58,44,0.55); border-radius: 12px; background: rgba(210,58,44,0.08); text-align: left; opacity: 0; animation: fadeUp 1s ease forwards 1s; }
+  #intro .beta .badge { flex-shrink: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.25em; color: #fff; background: var(--accent); padding: 6px 10px; border-radius: 999px; }
+  #intro .beta-text { font-size: clamp(12px, 1.4vw, 15px); line-height: 1.7; color: #ccc; letter-spacing: 0.04em; }
+  #intro .beta-text b { color: #fff; font-size: 1.15em; }
+  @media (max-width: 520px) { #intro .beta { flex-direction: column; align-items: flex-start; gap: 10px; } }
   #intro .rule { width: 0; height: 1px; background: #555; margin: 30px 0 22px; animation: grow 1.2s ease forwards 1.2s; }
   #intro small { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: #777; opacity: 0; animation: fadeIn 1s ease forwards 2s, blink 2s ease-in-out infinite 3s; }
   #intro.fadeout { animation: fadeOut 0.8s ease forwards; }
@@ -238,6 +244,38 @@
   .hud #hudDe .unit { font-size: 14px; }
   .hud .mult { margin-left: 6px; font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: 0.1em; padding: 3px 10px; border-radius: 999px; background: var(--ink); color: #fff; align-self: center; }
 
+  .hud #hudAi { margin-top: 12px; }
+  .hud #hudAi .line { font-size: 26px; }
+  .hud #hudAi .unit { font-size: 12px; }
+  .hud .lvchip { margin-left: 6px; font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--ink); color: var(--ink); align-self: center; }
+
+  /* ===== 変換装置1のパネル ===== */
+  #machine .panel { width: min(540px, 94vw); max-height: 92vh; overflow-y: auto; }
+  #machine h2 { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  #machine .lv { font-family: var(--mono); font-size: 13px; font-weight: 400; letter-spacing: 0.15em; color: #fff; background: var(--ink); padding: 4px 12px; border-radius: 999px; }
+  #mLvBar { display: flex; gap: 6px; margin-bottom: 18px; }
+  #mLvBar i { flex: 1; height: 4px; border-radius: 4px; background: #e5e5e5; }
+  #mLvBar i.on { background: var(--accent); }
+  .mrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(0,0,0,0.08); }
+  .mrow .mt { font-size: 15px; font-weight: 900; letter-spacing: 0.03em; }
+  .mrow .ms { font-family: var(--mono); font-size: 12px; color: #555; margin-top: 4px; letter-spacing: 0.04em; }
+  .mrow .ms b { color: var(--ink); }
+  .mrow .warn { font-size: 11px; color: var(--accent); margin-top: 4px; }
+  .mrow .mbtns { display: flex; gap: 8px; flex-shrink: 0; }
+  .panel button.btn-line { background: #fff; border: 1px solid var(--ink); color: var(--ink); }
+  .panel button.btn-line:hover { background: var(--ink); color: #fff; }
+  .panel button:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+  .panel button.btn-up { background: var(--accent); border: 1px solid var(--accent); color: #fff; min-width: 84px; }
+  .panel button.btn-up:hover { background: #fff; color: var(--accent); }
+  .panel button.btn-up.armed { background: var(--ink); border-color: var(--ink); animation: blink 0.8s ease-in-out infinite; }
+  .mhave { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; padding-top: 14px; border-top: 1px solid rgba(0,0,0,0.08); }
+  .mhave b { color: var(--ink); font-weight: 400; }
+  .mhave .sep { margin: 0 8px; color: #ccc; }
+  #machine .btns { align-items: center; }
+  #machine .hintk { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; color: var(--muted); }
+  @media (max-width: 480px) { .mrow { flex-direction: column; align-items: flex-start; gap: 10px; } }
+  #btnMachine { padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--ink); color: var(--ink); font-size: 11px; letter-spacing: 0.1em; }
+
   /* 照準 */
   .cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 4px rgba(255,255,255,0.6); }
 
@@ -337,6 +375,10 @@
 <div id="intro" class="screen">
   <div class="tag">BEFORE YOU START</div>
   <p>このゲームは<b>Roblox</b>の<br>「時間を無駄にする」というゲームに<br>インスパイアされています！</p>
+  <div class="beta">
+    <span class="badge">β VERSION</span>
+    <div class="beta-text"><b>これはβ版です！</b><br>開発中のため、内容が変わったり、<br>セーブデータが消えたりすることがあります。</div>
+  </div>
   <div class="rule"></div>
   <small id="introHint">CLICK TO CONTINUE</small>
 </div>
@@ -376,6 +418,9 @@
       <div class="res" id="hudDe">
         <div class="line"><span id="deVal">0</span><span class="unit">de</span><span class="mult">×<span id="mult">1</span></span></div>
       </div>
+      <div class="res" id="hudAi">
+        <div class="line"><span id="aiVal">0</span><span class="unit">ai</span><span class="lvchip">装置 Lv <span id="lvVal">0</span></span></div>
+      </div>
     </div>
     <div class="cross"></div>
     <div id="prompt"><span class="key">E</span><span id="promptText"></span></div>
@@ -389,9 +434,32 @@
     <div class="hint pc-only">ESC  一時停止</div>
     <div id="stick" class="touch-only"><div id="knob"></div></div>
     <button id="btnPause" class="touch-btn touch-only" aria-label="一時停止">II</button>
-    <div id="touchAct" class="touch-only"><button id="btnAct" class="touch-btn">変換</button><button id="btnActAll" class="touch-btn">まとめて</button></div>
+    <div id="touchAct" class="touch-only"><button id="btnAct" class="touch-btn">変換</button><button id="btnActAll" class="touch-btn">まとめて</button><button id="btnMachine" class="touch-btn" style="display:none">装置</button></div>
   </div>
   <div id="wake"><div id="wakeText"></div></div>
+</div>
+
+<!-- 変換装置1 -->
+<div id="machine" class="overlay">
+  <div class="panel">
+    <div class="kicker">CONVERTER 01</div>
+    <h2>変換装置1 <span class="lv" id="mLv">Lv 0</span></h2>
+    <div id="mLvBar"></div>
+    <div class="mrow">
+      <div><div class="mt">ti を de に変換</div><div class="ms" id="mConvRate"></div></div>
+      <div class="mbtns"><button id="mConv1" class="btn-solid">変換</button><button id="mConvAll" class="btn-line">まとめて</button></div>
+    </div>
+    <div class="mrow">
+      <div><div class="mt">ti を ai にする</div><div class="ms" id="mAiRate"></div></div>
+      <div class="mbtns"><button id="mAi1" class="btn-solid">作る</button><button id="mAiAll" class="btn-line">まとめて</button></div>
+    </div>
+    <div class="mrow">
+      <div><div class="mt">アップグレード</div><div class="ms" id="mUpInfo"></div><div class="warn" id="mUpWarn">強化すると、持っている de は 0 になる</div></div>
+      <div class="mbtns"><button id="mUp" class="btn-up">強化</button></div>
+    </div>
+    <div class="mhave">所持　<b id="mTi">0</b> ti<span class="sep">/</span><b id="mDe">0</b> de<span class="sep">/</span><b id="mAi">0</b> ai</div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="mClose" class="btn-solid">閉じる</button></div>
+  </div>
 </div>
 
 <!-- 一時停止 -->
@@ -548,8 +616,10 @@
       const no = `<span class="no">SLOT ${String(n).padStart(2, '0')}</span>`;
       if (d) {
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
-        b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small></div>` +
-          `<div class="sub">${prog}　${fmtDate(d.savedAt)}</div></span>` +
+        const aiTxt = d.ai || d.lv ? `${fmtNum(d.ai || 0)}<small>ai</small>` : '';
+        const lvTxt = d.lv ? `装置 Lv${d.lv}　` : '';
+        b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
+          `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
           `<span class="del" role="button" aria-label="削除" title="このセーブを削除">✕</span>`;
       } else {
         b.innerHTML = `${no}<span class="info"><div class="main">— 空き —</div><div class="sub">${slotMode === 'new' ? 'ここから始める' : 'セーブなし'}</div></span><span class="go">${slotMode === 'new' ? 'NEW' : ''}</span>`;

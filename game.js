@@ -17,7 +17,19 @@ const SPEED = 3.2;         // 歩く速さ（m/秒）
 const LOOK_SENS = 0.0022;  // マウス感度
 const TOUCH_SENS = 0.006;  // 指でなぞったときの視点感度（1px あたりのラジアン）
 const STICK_R = 48;        // スティックが最大まで倒れる距離（px）
-const CONVERT_COST = 10;   // 10 ti → 1 de
+const CONVERT_COST = 10;   // 10 ti → 1 de（Lv0。チュートリアル用）
+// 変換装置1のレベルごとの「ti いくつで de いくつ」（Lv0〜Lv5）
+const CONV_LV = [
+  { cost: 10, gain: 1 },
+  { cost: 15, gain: 2 },
+  { cost: 25, gain: 4 },
+  { cost: 40, gain: 6 },
+  { cost: 60, gain: 8 },
+  { cost: 90, gain: 10 },
+];
+const CONV_MAX = CONV_LV.length - 1;     // 最大 Lv5
+const UPGRADE_COST = [1, 2, 4, 8, 16];   // Lv0→1, 1→2, … にかかる ai
+const AI_COST = 100000;                   // 100,000 ti → 1 ai
 const CONVERTER_R = 0.7;   // 変換装置の当たり判定
 const INTERACT_DIST = 1.9; // 変換装置を使える距離
 const BED = { x: -4.9, z: -4.7, w: 1.7, d: 2.5 };
@@ -27,7 +39,7 @@ const INK = 0x141414;
 
 // ===== 状態 =====
 let renderer, scene, camera;
-let hands = {}, ring, gem, ringPulse = 0;
+let hands = {}, ring, gem, ringPulse = 0, orbs = [];
 let state = null;
 let phase = 'off';          // off | wake | play | paused
 let yaw = 0, pitch = 0, camY = EYE;
@@ -39,9 +51,13 @@ let leaving = false, dragging = false;
 let lookId = null, lookX = 0, lookY = 0;
 let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
-const newState = () => ({ ti: 0, de: 0, tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
+const newState = () => ({ ti: 0, de: 0, ai: 0, lv: 0, tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
 const rate = () => 1 * (1 + state.de);
+// いまの変換装置1の性能
+const conv = () => CONV_LV[Math.min(state.lv || 0, CONV_MAX)];
+// 装置のパネル（ai・アップグレード）はチュートリアルが終わってから
+const machineUnlocked = () => state.tut >= 6;
 
 // ===== 小さな便利関数 =====
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -238,6 +254,15 @@ function buildConverter() {
   area.position.y = 0.004;
   g.add(area);
 
+  // アップグレードしたレベルの数だけ、赤い玉が宝石のまわりを回る
+  const orbMat = new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 1.5 });
+  for (let i = 0; i < CONV_MAX; i++) {
+    const o = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), orbMat);
+    o.visible = false;
+    g.add(o);
+    orbs.push(o);
+  }
+
   const red = new THREE.PointLight(ACCENT, 3, 4, 2);
   red.position.y = 1.5;
   g.add(red);
@@ -257,8 +282,13 @@ function bindInput() {
     if (phase === 'off') return;
     keys[e.code] = true;
     if (e.code === 'KeyE' && phase === 'play') convert(e.shiftKey);
+    if (e.code === 'KeyF') {
+      if (phase === 'play') openMachine();
+      else if (phase === 'menu') closeMachine();
+    }
     if (e.code === 'Escape') {
-      if (phase === 'play' && !isLocked()) pause();
+      if (phase === 'menu') closeMachine();
+      else if (phase === 'play' && !isLocked()) pause();
       else if (phase === 'paused') resume();
     }
   });
@@ -326,6 +356,16 @@ function bindInput() {
   $('btnPause').addEventListener('click', () => { if (phase === 'play') pause(); });
   $('btnAct').addEventListener('click', () => { if (phase === 'play') convert(false); });
   $('btnActAll').addEventListener('click', () => { if (phase === 'play') convert(true); });
+  $('btnMachine').addEventListener('click', () => { if (phase === 'play') openMachine(); });
+
+  // ===== 変換装置1のパネル =====
+  $('mConv1').addEventListener('click', () => convert(false, true));
+  $('mConvAll').addEventListener('click', () => convert(true, true));
+  $('mAi1').addEventListener('click', () => makeAi(false));
+  $('mAiAll').addEventListener('click', () => makeAi(true));
+  $('mUp').addEventListener('click', upgrade);
+  $('mClose').addEventListener('click', closeMachine);
+  $('machine').addEventListener('click', (e) => { if (e.target.id === 'machine') closeMachine(); });
 
   // スマホはページを閉じても beforeunload が来ないことがあるので、隠れたときにも保存
   document.addEventListener('visibilitychange', () => { if (document.hidden && phase !== 'off') save(); });
@@ -393,9 +433,10 @@ function collide() {
 const nearConverter = () => Math.hypot(state.x, state.z) < INTERACT_DIST;
 
 // ===== ti → de 変換 =====
-function convert(all) {
-  if (state.tut < 4 || !nearConverter()) return;
-  const n = all ? Math.floor(state.ti / CONVERT_COST) : state.ti >= CONVERT_COST ? 1 : 0;
+function convert(all, fromPanel = false) {
+  if (state.tut < 4 || (!fromPanel && !nearConverter())) return;
+  const c = conv();
+  const n = all ? Math.floor(state.ti / c.cost) : state.ti >= c.cost ? 1 : 0;
   if (n <= 0) {
     const p = $('prompt');
     p.classList.remove('shake');
@@ -403,11 +444,92 @@ function convert(all) {
     p.classList.add('shake');
     return;
   }
-  state.ti -= n * CONVERT_COST;
-  state.de += n;
+  state.ti -= n * c.cost;
+  state.de += n * c.gain;
   ringPulse = 1;
-  toast(`+${fmt(n)} de`);
+  toast(`+${fmt(n * c.gain)} de`);
   save();
+  if (phase === 'menu') renderMachine();
+}
+
+// ===== ti → ai（100,000 ti で 1 ai） =====
+function makeAi(all) {
+  const n = all ? Math.floor(state.ti / AI_COST) : state.ti >= AI_COST ? 1 : 0;
+  if (n <= 0) return;
+  state.ti -= n * AI_COST;
+  state.ai = (state.ai || 0) + n;
+  ringPulse = 1;
+  toast(`+${fmt(n)} ai`);
+  save();
+  if (phase === 'menu') renderMachine();
+}
+
+// ===== 変換装置1のアップグレード（ai を使う。de は 0 になる） =====
+let upArmed = false; // 1回目で「本当に？」、2回目で実行
+function upgrade() {
+  const lv = state.lv || 0;
+  if (lv >= CONV_MAX) return;
+  const cost = UPGRADE_COST[lv];
+  if ((state.ai || 0) < cost) return;
+  if (!upArmed) { upArmed = true; renderMachine(); return; }
+  upArmed = false;
+  state.ai -= cost;
+  state.lv = lv + 1;
+  state.de = 0;
+  ringPulse = 1.6;
+  toast(`変換装置1 Lv${state.lv}`);
+  save();
+  renderMachine();
+}
+
+// ===== パネルの開け閉め =====
+function openMachine() {
+  if (!machineUnlocked() || !nearConverter()) return;
+  phase = 'menu';
+  upArmed = false;
+  for (const k in keys) keys[k] = false;
+  if (window.TDG_resetStick) window.TDG_resetStick();
+  if (document.pointerLockElement) document.exitPointerLock();
+  renderMachine();
+  $('machine').classList.add('active');
+}
+function closeMachine() {
+  $('machine').classList.remove('active');
+  phase = 'play';
+  upArmed = false;
+  if (!IS_TOUCH) lockPointer();
+}
+
+// パネルの中身（開いている間は毎フレーム更新）
+function renderMachine() {
+  const lv = state.lv || 0, c = conv(), ai = state.ai || 0;
+  $('mLv').textContent = lv >= CONV_MAX ? 'Lv MAX' : `Lv ${lv}`;
+  $('mLvBar').innerHTML = Array.from({ length: CONV_MAX }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('');
+  $('mConvRate').textContent = `${c.cost} ti → ${c.gain} de`;
+  $('mConv1').disabled = state.ti < c.cost;
+  $('mConvAll').disabled = state.ti < c.cost * 2;
+  $('mAiRate').textContent = `${fmt(AI_COST)} ti → 1 ai`;
+  $('mAi1').disabled = state.ti < AI_COST;
+  $('mAiAll').disabled = state.ti < AI_COST * 2;
+  const up = $('mUp');
+  if (lv >= CONV_MAX) {
+    $('mUpInfo').textContent = 'これ以上は強化できない';
+    $('mUpWarn').style.visibility = 'hidden';
+    up.textContent = 'MAX';
+    up.disabled = true;
+    up.classList.remove('armed');
+  } else {
+    const next = CONV_LV[lv + 1];
+    $('mUpInfo').innerHTML = `Lv${lv + 1}：<b>${next.cost} ti → ${next.gain} de</b>　／　${fmt(UPGRADE_COST[lv])} ai`;
+    $('mUpWarn').style.visibility = 'visible';
+    up.disabled = ai < UPGRADE_COST[lv];
+    if (up.disabled) upArmed = false;
+    up.textContent = upArmed ? '本当に？' : '強化';
+    up.classList.toggle('armed', upArmed);
+  }
+  $('mTi').textContent = fmt(state.ti);
+  $('mDe').textContent = fmt(state.de);
+  $('mAi').textContent = fmt(ai);
 }
 
 function toast(text) {
@@ -524,23 +646,32 @@ function updateHud() {
   $('tiRate').textContent = fmt(rate());
   $('deVal').textContent = fmt(state.de);
   $('mult').textContent = fmt(1 + state.de);
+  $('aiVal').textContent = fmt(state.ai || 0);
+  $('lvVal').textContent = (state.lv || 0) >= CONV_MAX ? 'MAX' : state.lv || 0;
+  // ai は、作れるようになったら（または持っていたら）表示
+  $('hudAi').classList.toggle('show', machineUnlocked() && ((state.ai || 0) > 0 || (state.lv || 0) > 0 || state.ti >= AI_COST));
+  if (phase === 'menu') renderMachine();
 
   const prompt = $('prompt');
   const show = phase === 'play' && state.tut >= 4 && nearConverter();
   prompt.classList.toggle('show', show);
   const act = $('touchAct');
   act.classList.toggle('show', show);
+  $('btnMachine').style.display = show && machineUnlocked() ? '' : 'none';
   if (show) {
-    const can = state.ti >= CONVERT_COST;
+    const c = conv();
+    const can = state.ti >= c.cost;
+    const rateTxt = `${c.cost} ti → ${c.gain} de`;
     prompt.classList.toggle('off', !can);
     act.classList.toggle('off', !can);
     if (IS_TOUCH) {
-      $('promptText').textContent = can ? '10 ti → 1 de に変換できる' : `あと ${fmt(Math.ceil(CONVERT_COST - state.ti))} ti 必要`;
+      $('promptText').textContent = can ? `${rateTxt} に変換できる` : `あと ${fmt(Math.ceil(c.cost - state.ti))} ti 必要`;
       return;
     }
-    $('promptText').innerHTML = can
-      ? `10 ti → 1 de に変換　<span class="sub"><kbd>Shift</kbd>+<kbd>E</kbd> でまとめて</span>`
-      : `あと ${fmt(Math.ceil(CONVERT_COST - state.ti))} ti 必要`;
+    const panelHint = machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 装置を開く</span>` : '';
+    $('promptText').innerHTML = (can
+      ? `${rateTxt} に変換　<span class="sub"><kbd>Shift</kbd>+<kbd>E</kbd> でまとめて</span>`
+      : `あと ${fmt(Math.ceil(c.cost - state.ti))} ti 必要`) + panelHint;
   }
 }
 
@@ -573,6 +704,11 @@ function frame(now) {
   ring.material.emissiveIntensity = 1.2 + ringPulse * 4;
   gem.rotation.y = t * 1.3;
   gem.position.y = 1.6 + Math.sin(t * 2) * 0.05;
+  orbs.forEach((o, i) => {
+    o.visible = i < (state.lv || 0);
+    const a = t * 1.6 + (i / CONV_MAX) * Math.PI * 2;
+    o.position.set(Math.cos(a) * 0.32, 1.6 + Math.sin(a * 2) * 0.06, Math.sin(a) * 0.32);
+  });
 
   updateTutorial(dt);
   updateHud();
@@ -615,6 +751,7 @@ function resume() {
 function toTitle() {
   wakeToken++;
   leaving = true;
+  $('machine').classList.remove('active');
   save();
   // かるわかGAMES アカウントにログインしていれば、すぐクラウドにも保存
   if (window.KaAccount && KaAccount.isLoggedIn()) KaAccount.saveNow();
