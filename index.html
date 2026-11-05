@@ -237,7 +237,7 @@
   .seg button + button { border-left: 1px solid rgba(0,0,0,0.15) !important; }
   .seg button.on { background: var(--ink); color: #fff; }
   .seg button:hover:not(.on) { background: rgba(0,0,0,0.06); color: var(--ink); }
-  #settings .panel { width: min(480px, 94vw); }
+  #settings .panel { width: min(520px, 94vw); }
 
   /* ===== プレイ画面（3D） ===== */
   #play { background: #f3f3f2; z-index: 5; }
@@ -319,6 +319,46 @@
   body.room2 .hud .lvchip { border-color: #f2f2f2; color: #f2f2f2; }
   body.room2 .cross { background: #f2f2f2; box-shadow: 0 0 0 4px rgba(0,0,0,0.5); }
   body.room2 .hint { color: #777; }
+  /* 部屋3（赤い部屋）でも HUD を白く */
+  body.room3 .hud .line, body.room3 .hud .rate b { color: #fff; }
+  body.room3 .hud .unit { color: #141414; }
+  body.room3 .hud .rate, body.room3 .hud .kicker { color: #f3c9c4; }
+  body.room3 .hud .kicker::before { background: #f3c9c4; }
+  body.room3 .hud .mult { background: #fff; color: #141414; }
+  body.room3 .hud .lvchip { border-color: #fff; color: #fff; }
+  body.room3 .cross { background: #fff; }
+  body.room3 .hint { color: #f3c9c4; }
+  .hud #hudTed { margin-top: 12px; }
+  .hud #hudTed .line { font-size: 26px; }
+  .hud #hudTed .unit { font-size: 12px; }
+  .hud .chchip { margin-top: -10px; margin-bottom: 14px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: #fff; background: var(--ink); border-radius: 999px; padding: 3px 10px; width: fit-content; }
+  /* 時間が止まっている間は、色が抜ける */
+  #stage.stopped canvas { filter: grayscale(0.9) contrast(1.1); transition: filter 0.4s; }
+  #stage canvas { transition: filter 0.6s; }
+  /* 夢の木・チャレンジ */
+  #dreamPanel .panel, #eraserPanel .panel, #offlinePanel .panel { width: min(600px, 94vw); max-height: 92vh; overflow-y: auto; }
+  #dreamPanel h2, #eraserPanel h2, #offlinePanel h2 { margin-bottom: 12px; }
+  .dream-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 520px) { .dream-grid { grid-template-columns: 1fr; } }
+  .dream { padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.12); display: flex; flex-direction: column; gap: 6px; }
+  .dream.got { border-color: var(--accent); background: rgba(210,58,44,0.06); }
+  .dream.locked { opacity: 0.45; }
+  .d-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .d-cost { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+  .d-desc { font-size: 12px; color: #555; line-height: 1.6; }
+  .d-need { font-size: 11px; color: var(--muted); }
+  .dream button { align-self: flex-start; padding: 6px 14px !important; font-size: 12px !important; }
+  .chnow { font-size: 13px; margin-bottom: 8px; }
+  .chnow:empty { display: none; }
+  .chnow button { padding: 4px 12px !important; font-size: 12px !important; margin-left: 8px; }
+  /* 設定：キーの割り当て */
+  #settings .panel { max-height: 92vh; overflow-y: auto; }
+  .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; padding-bottom: 12px; }
+  .keyitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #444; }
+  .keyitem button { min-width: 70px; padding: 5px 10px !important; font-size: 12px !important; font-family: var(--mono) !important; }
+  .keyitem button.armed { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+  .keyrow { align-items: flex-start; }
+  .keyrow button { padding: 6px 12px !important; font-size: 12px !important; }
 
   /* 眠る */
   #sleepPanel .panel, #achPanel .panel, #statsPanel .panel { width: min(520px, 94vw); max-height: 92vh; overflow-y: auto; }
@@ -413,6 +453,7 @@
   .chip.me { border-color: var(--accent); color: var(--accent); }
   .chip.yume { background: #fff; border-style: dashed; }
   .chip.le { background: #fff; color: var(--ink); border: 2px solid var(--ink); font-weight: 700; }
+  .chip.ted { background: var(--accent); color: #fff; border: 2px solid var(--ink); font-weight: 700; }
   .chip.box { border-radius: 6px; font-family: inherit; font-weight: 700; }
   .chip.plain { border-color: rgba(0,0,0,0.15); font-family: inherit; }
   .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -575,13 +616,17 @@
       <div class="kicker" id="hudKicker">TIME DELETED</div>
       <div class="res" id="hudTi">
         <div class="line"><span id="tiVal">0</span><span class="unit">ti</span></div>
-        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span> <span class="yume" id="trailChip" style="display:none"></span></div>
+        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span> <span class="yume" id="trailChip" style="display:none"></span> <span class="yume" id="eventChip" style="display:none"></span></div>
+        <div class="chchip" id="chChip" style="display:none"></div>
       </div>
       <div class="res" id="hudDe">
         <div class="line"><span id="deVal">0</span><span class="unit">de</span><span class="mult">×<span id="mult">1</span></span></div>
       </div>
       <div class="res" id="hudMe">
         <div class="line"><span id="meVal">0</span><span class="unit">me</span><span class="mult">×<span id="meMult">1</span></span></div>
+      </div>
+      <div class="res" id="hudTed">
+        <div class="line"><span id="tedVal">0</span><span class="unit">ted</span><span class="mult">×<span id="tedMult">1</span></span></div>
       </div>
       <div class="res" id="hudLe">
         <div class="line"><span id="leVal">0</span><span class="unit">le</span><span class="mult">×<span id="leMult">1</span></span></div>
@@ -732,10 +777,51 @@
 <div id="roomPanel" class="overlay">
   <div class="panel">
     <div class="kicker">DOOR</div>
-    <h2>取っ手のないドア</h2>
-    <p class="ptext">ドアの向こうには、変換装置とは別のしくみ「生成機」がある黒い部屋。一度開けると、眠ってもずっと開いたまま。</p>
+    <h2 id="roomTitle">取っ手のないドア</h2>
+    <p class="ptext" id="roomDesc"></p>
     <div class="mrow"><div><div class="mt">開けるのに必要</div><div class="ms" id="roomCost"></div></div><div class="mbtns"><button id="btnRoom" class="btn-up">開ける</button></div></div>
     <div class="btns"><span></span><button id="roomClose" class="btn-line">やめる</button></div>
+  </div>
+</div>
+
+<!-- 消去装置（部屋3） -->
+<div id="eraserPanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">ERASER</div>
+    <h2>消去装置</h2>
+    <p class="ptext">le を ted に変える。ted は「すべて」に ×(1 + ted) の倍率。ted が貯まりきると、時間がすべて消える。</p>
+    <div class="mrow"><div style="flex:1"><div class="mt" id="eTed"></div><div class="g-bar" style="height:6px"><i id="eBar"></i></div><div class="ms" id="eMult" style="margin-top:6px"></div></div></div>
+    <div class="mrow"><div><div class="mt">le を ted に変える</div><div class="ms" id="eLe"></div></div><div class="mbtns"><button id="eOne" class="btn-solid">変える</button><button id="eAll" class="btn-line">まとめて</button></div></div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="eClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 夢の木・チャレンジ -->
+<div id="dreamPanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">DREAMS</div>
+    <h2>夢の木</h2>
+    <p class="ptext">夢を払って、眠ってもずっと残る強化を取る。<b>夢を使うと、夢の倍率もそのぶん下がる</b>。</p>
+    <div class="mhave" id="dYume" style="border-top:none;padding-top:0;margin-bottom:8px"></div>
+    <div id="dreamList" class="dream-grid"></div>
+    <div class="kicker" style="margin-top:22px">CHALLENGES</div>
+    <h2 style="font-size:22px">チャレンジ</h2>
+    <p class="ptext">挑戦すると、眠ったときと同じように最初からやり直し（夢はもらえない）。ルールを守ったまま目標まで ti を消すと、ずっと残るごほうび。</p>
+    <div class="chnow" id="chNow"></div>
+    <div id="chList" class="dream-grid"></div>
+    <div class="btns"><span></span><button id="dClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 閉じていた間の報酬 -->
+<div id="offlinePanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">WELCOME BACK</div>
+    <h2>おかえり</h2>
+    <p class="ptext">いない間も、時間は消え続けていた。</p>
+    <div class="mrow"><div><div class="mt">いなかった時間</div><div class="ms" id="oTime"></div></div></div>
+    <div class="mrow"><div><div class="mt">消えていた時間</div></div><div style="text-align:right"><div class="big" id="oTi"></div><div class="ms" id="oLe"></div></div></div>
+    <div class="btns"><span></span><button id="oClose" class="btn-solid">受け取る</button></div>
   </div>
 </div>
 
@@ -748,6 +834,7 @@
     <div class="mrow"><div><div class="mt">もらえる夢</div><div class="ms" id="sRun"></div></div><div class="big" id="sGain">0</div></div>
     <div class="mrow"><div><div class="mt">夢の倍率</div><div class="ms" id="sMult"></div></div></div>
     <div class="mrow"><div><div class="mt">消えるもの</div><div class="ms">ti・de・ai・me、変換装置のレベルと解放</div><div class="mt" style="margin-top:10px">残るもの</div><div class="ms">夢・自動化機・実績・統計</div></div></div>
+    <div class="mrow"><div><div class="mt">夢の木・チャレンジ</div><div class="ms">夢を払ってずっと残る強化を取る／条件つきで1周遊ぶ</div></div><div class="mbtns"><button id="btnDreamS" class="btn-line">開く</button></div></div>
     <div class="btns"><button id="sClose" class="btn-line">やめる</button><button id="btnSleep" class="btn-up">眠る</button></div>
   </div>
 </div>
@@ -805,14 +892,14 @@
     <p class="ptext">この部屋では、時間が <span class="chip ti">ti</span> になって消えていく。ti を別のものに変えて、もっと速く時間を消していこう。</p>
 
     <div class="road">
-      <div><b>1</b>de を集める</div><div><b>2</b>ai を作る</div><div><b>3</b>装置を強化</div><div><b>4</b>装置2・3</div><div><b>5</b>部屋2</div><div><b>6</b>眠る</div>
+      <div><b>1</b>de を集める</div><div><b>2</b>ai を作る</div><div><b>3</b>装置を強化</div><div><b>4</b>装置2・3</div><div><b>5</b>部屋2</div><div><b>6</b>眠る</div><div><b>7</b>部屋3</div>
     </div>
 
     <section class="hsec">
       <div class="hno">01</div>
       <div class="hbody">
         <h3>毎秒の ti</h3>
-        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip le">le</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
+        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip le">le</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip ted">ted</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
         <p>de・me・le・夢 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
       </div>
     </section>
@@ -886,8 +973,17 @@
     <section class="hsec">
       <div class="hno">09</div>
       <div class="hbody">
+        <h3>部屋3・ted・夢の木・チャレンジ</h3>
+        <div class="flow"><span class="chip le">1兆 le</span><span class="arrow">→</span><span class="chip box">部屋3</span><span class="sep2">：</span><span class="chip le">10億 le</span><span class="arrow">→</span><span class="chip ted">1 ted</span></div>
+        <p>部屋2の右の赤いドアを le で開けると、赤い部屋の<b>消去装置</b>で le を ted に変えられる。<b>ted は「すべて」に ×(1 + ted)</b>。ted が 100万 貯まると、時間がすべて消える（エンディング）。眠ったあとは、ベッドのパネルや一時停止の「<b>夢の木</b>」で夢を払ってずっと残る強化を取れる（夢を使うと倍率も下がる）。同じ画面の<b>チャレンジ</b>は、条件つきで1周遊んで目標まで ti を消すと、ずっと残るごほうびがもらえる。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">10</div>
+      <div class="hbody">
         <h3>そのほか</h3>
-        <p>部屋の物（時計・ベッド・ノートなど）は近づいて <kbd>E</kbd> で調べられる。進めると部屋が少しずつ変わる。実績・統計・このページは一時停止メニューから見られる。数字の表示（K・M・B や 万・億・兆）は設定で変えられる。</p>
+        <p>ゲームを閉じている間も時間は消え続けていて、次に開いたときに受け取れる。まれに<b>時間が止まって</b>、10秒間すべて ×10 になる。部屋1の明るさは本当の時刻で変わる。部屋の物（時計・ベッド・ノートなど）は近づいて <kbd>E</kbd> で調べられる。進めると部屋が少しずつ変わる。実績・統計・このページは一時停止メニューから見られる。数字の表示（K・M・B や 万・億・兆）は設定で変えられる。</p>
       </div>
     </section>
 
@@ -901,7 +997,7 @@
     <div class="kicker">PAUSED</div>
     <h2>一時停止</h2>
     <p>止まっている間も、時間は消え続けている。</p>
-    <div class="pause-links"><button id="btnHelpP" class="btn-line">あそびかた</button><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
+    <div class="pause-links"><button id="btnHelpP" class="btn-line">あそびかた</button><button id="btnDreamP" class="btn-line">夢の木</button><button id="btnSettingsP" class="btn-line">設定</button><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
     <div class="btns">
       <button id="btnToTitle" class="btn-ghost">タイトルへ</button>
       <button id="btnResume" class="btn-solid">再開</button>
@@ -926,6 +1022,10 @@
     <div class="row"><label for="bgm">BGM音量</label><div class="ctrl"><input id="bgm" type="range" min="0" max="100"><span class="val" id="bgmVal"></span></div></div>
     <div class="row"><label for="se">効果音音量</label><div class="ctrl"><input id="se" type="range" min="0" max="100"><span class="val" id="seVal"></span></div></div>
     <div class="row numrow"><div><label>数字の表示</label><div class="numex">例：<span id="numExample"></span></div></div><div class="seg" id="numFormat"></div></div>
+    <div class="row"><label for="sens">視点の感度</label><div class="ctrl"><input id="sens" type="range" min="20" max="300"><span class="val" id="sensVal"></span></div></div>
+    <div class="row"><label for="invertY">視点の上下を反転</label><label class="switch"><input id="invertY" type="checkbox"><span></span></label></div>
+    <div class="row keyrow pc-only"><div><label>キーの割り当て</label><div class="numex">ボタンを押してから、使いたいキーを押す（Esc でやめる）</div></div><button id="keyReset" class="btn-line">元に戻す</button></div>
+    <div class="keys pc-only" id="keyList"></div>
     <div class="row"><label for="showIntro">起動時メッセージを再表示</label><label class="switch"><input id="showIntro" type="checkbox"><span></span></label></div>
     <div class="btns">
       <span></span>
@@ -989,7 +1089,9 @@
   }, 250);
 
   // ===== 設定の読み書き =====
-  const defaultSettings = { bgm: 70, se: 70, numFormat: 'std' };
+  const DEFAULT_KEYS = { fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', run: 'ShiftLeft', act: 'KeyE', panel: 'KeyF' };
+  const KEY_NAMES = { fwd: '前へ', back: '後ろへ', left: '左へ', right: '右へ', run: '走る', act: '変換・調べる・買う', panel: '装置のパネル・眠る' };
+  const defaultSettings = { bgm: 70, se: 70, numFormat: 'std', sens: 1, invertY: false, keys: {} };
   function loadSettings() {
     try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(KEY_SETTINGS) || '{}') }; }
     catch { return { ...defaultSettings }; }
@@ -1118,7 +1220,7 @@
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
         // セーブの数字は文字列（"1e+320" など）なので、0 より大きいかは Decimal で比べる
         const pos = (v) => { const x = toDec(v); return !!x && x.gt(0); };
-        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '') + (pos(d.le) || d.room2 ? `${fmtNum(d.le)}<small>le</small>` : '');
+        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '') + (pos(d.le) || d.room2 ? `${fmtNum(d.le)}<small>le</small>` : '') + (pos(d.ted) || d.room3 ? `${fmtNum(d.ted)}<small>ted</small>` : '');
         const lvTxt = (pos(d.yume) ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
         b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
           `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
@@ -1163,6 +1265,7 @@
     c.style.setProperty('--roll', Math.max(20, (roll.offsetHeight + innerHeight) / 70) + 's');
   }
   const closeCredits = () => $('credits').classList.remove('active');
+  window.TDG_openCredits = openCredits;
   $('btnCredits').addEventListener('click', openCredits);
   $('credits').addEventListener('click', closeCredits);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('credits').classList.contains('active')) closeCredits(); });
@@ -1170,7 +1273,7 @@
   $('creditsRoll').addEventListener('animationend', closeCredits);
 
   // あそびかた（タイトルからも、一時停止メニューからも開く）
-  $('btnHelp').addEventListener('click', () => { window.TDG_helpFrom = 'title'; $('help').classList.add('active'); $('help').querySelector('.panel').scrollTop = 0; });
+  $('btnHelp').addEventListener('click', () => { window.TDG_helpFrom = 'title'; window.keysify($('help')); $('help').classList.add('active'); $('help').querySelector('.panel').scrollTop = 0; });
   $('helpClose').addEventListener('click', () => {
     $('help').classList.remove('active');
     if (window.TDG_helpFrom === 'pause') $('pause').classList.add('active');
@@ -1200,21 +1303,88 @@
     saveSettings(settings);
     renderNumFormat();
   });
-  $('btnSettings').addEventListener('click', () => {
+  // ===== キーの割り当て =====
+  const keysNow = () => ({ ...DEFAULT_KEYS, ...(settings.keys || {}) });
+  function keyLabel(code) {
+    if (!code) return '?';
+    if (code.startsWith('Key')) return code.slice(3);
+    if (code.startsWith('Digit')) return code.slice(5);
+    const map = { ShiftLeft: 'Shift', ShiftRight: 'Shift', ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt', Space: 'Space', Tab: 'Tab', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Backquote: '`', Minus: '-', Equal: '=', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\' };
+    return map[code] || code;
+  }
+  // 画面の <kbd>E</kbd> などを、設定したキーの名前に書き換える（game.js からも使う）
+  const KBD_ACTION = { E: 'act', F: 'panel', W: 'fwd', A: 'left', S: 'back', D: 'right' };
+  window.keysify = (root) => {
+    if (!root) return;
+    const k = keysNow();
+    root.querySelectorAll('kbd').forEach((el) => {
+      const orig = el.dataset.k || el.textContent.trim();
+      el.dataset.k = orig;
+      const a = KBD_ACTION[orig];
+      el.textContent = a ? keyLabel(k[a]) : orig;
+    });
+  };
+  let waitingKey = null;
+  function renderKeys() {
+    const k = keysNow();
+    $('keyList').innerHTML = Object.keys(DEFAULT_KEYS).map((a) =>
+      `<div class="keyitem"><span>${KEY_NAMES[a]}</span><button class="btn-line ${waitingKey === a ? 'armed' : ''}" data-key="${a}">${waitingKey === a ? 'キーを押す…' : keyLabel(k[a])}</button></div>`).join('');
+  }
+  $('keyList').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    waitingKey = b.dataset.key;
+    renderKeys();
+  });
+  // キーを待っている間は、ゲームにキーを渡さない（document の capture で先に受け取る）
+  document.addEventListener('keydown', (e) => {
+    if (!waitingKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code !== 'Escape') {
+      settings.keys = { ...(settings.keys || {}), [waitingKey]: e.code };
+      saveSettings(settings);
+    }
+    waitingKey = null;
+    renderKeys();
+  }, true);
+  $('keyReset').addEventListener('click', () => { settings.keys = {}; saveSettings(settings); waitingKey = null; renderKeys(); });
+  function paintSens() {
+    const el = $('sens');
+    el.style.setProperty('--p', ((el.value - 20) / 280) * 100 + '%');
+    $('sensVal').textContent = (el.value / 100).toFixed(1) + 'x';
+  }
+  $('sens').addEventListener('input', (e) => { settings.sens = +e.target.value / 100; paintSens(); saveSettings(settings); });
+  $('invertY').addEventListener('change', (e) => { settings.invertY = e.target.checked; saveSettings(settings); });
+
+  // ===== 設定を開く・閉じる（タイトルからも、一時停止メニューからも） =====
+  function openSettings() {
     renderNumFormat();
     $('bgm').value = settings.bgm; paintRange($('bgm'));
     $('se').value = settings.se;   paintRange($('se'));
+    $('sens').value = Math.round((settings.sens || 1) * 100); paintSens();
+    $('invertY').checked = !!settings.invertY;
+    waitingKey = null;
+    renderKeys();
     $('showIntro').checked = !localStorage.getItem(KEY_INTRO);
     $('settings').classList.add('active');
-  });
+  }
+  function closeSettings() {
+    waitingKey = null;
+    $('settings').classList.remove('active');
+    if (window.TDG_settingsFrom === 'pause') { window.TDG_settingsFrom = null; $('pause').classList.add('active'); }
+  }
+  window.openSettings = openSettings;
+  window.closeSettings = closeSettings;
+  $('btnSettings').addEventListener('click', () => { window.TDG_settingsFrom = 'title'; openSettings(); });
   $('bgm').addEventListener('input', e => { settings.bgm = +e.target.value; paintRange(e.target); saveSettings(settings); });
   $('se').addEventListener('input', e => { settings.se = +e.target.value; paintRange(e.target); saveSettings(settings); });
   $('showIntro').addEventListener('change', e => {
     if (e.target.checked) localStorage.removeItem(KEY_INTRO);
     else localStorage.setItem(KEY_INTRO, '1');
   });
-  $('btnCloseSettings').addEventListener('click', () => $('settings').classList.remove('active'));
-  $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('active'); });
+  $('btnCloseSettings').addEventListener('click', closeSettings);
+  $('settings').addEventListener('click', e => { if (e.target.id === 'settings') closeSettings(); });
 
   // ===== かるわかGAMES アカウント =====
   // SDK が読み込めたときだけボタンを出す（オフラインなどで失敗したら出さない）
