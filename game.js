@@ -78,6 +78,11 @@ const GENS = [
 const EVOLVE_EVERY = 10;
 const GEN_POS = [-3.6, -1.2, 1.2, 3.6].map((dx) => ({ x: ROOM2_X + dx, z: -1.2 }));
 const GEN_R = 0.45; // 生成機の当たり判定
+// トレイル：le で買う。1つ買うごとに、すべての倍率が2倍（毎秒の ti・変換で手に入る量・生成機が作る量）
+const TRAIL_BASE = 1000;   // 最初の値段（le）
+const TRAIL_GROW = 10;     // 1つ買うごとに値段が何倍になるか
+const TRAIL_POS = { x: ROOM2_X, z: -4.3 }; // 部屋2の奥
+const TRAIL_R = 0.4;
 // 装置の置き場所
 const MACHINE_POS = { 1: { x: 0, z: 0 }, 2: { x: 3.4, z: 3.2 }, 3: { x: -3.4, z: 3.2 } };
 const CONVERTER_R = 0.7;   // 変換装置の当たり判定
@@ -112,7 +117,7 @@ let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
 const newStats = () => ({ play: 0, totalTi: 0, bestRate: 0, de: 0, ai: 0, me: 0, le: 0 });
 const newGens = () => GENS.map(() => ({ n: 0, b: 0 })); // n = 持っている台数（作られた分も含む）、b = 買った台数
-const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, le: 0, room2: false, room: 1, gens: newGens(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
+const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, le: 0, room2: false, room: 1, gens: newGens(), trails: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
   auto1: false, auto1On: true, auto2: false, auto2On: true,
   yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
@@ -132,8 +137,12 @@ const D = (v) => {
 const ZERO = () => new Decimal(0);
 const BIG_KEYS = ['ti', 'de', 'ai', 'me', 'le', 'runTi', 'yume'];
 const BIG_STATS = ['totalTi', 'bestRate', 'de', 'ai', 'me', 'le'];
-// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + le）×（1 + 夢）
-const rate = () => D(state.de).add(1).mul(D(state.me).add(1)).mul(D(state.le).add(1)).mul(D(state.yume).add(1));
+// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + le）×（1 + 夢）× 2^トレイル
+// トレイルの倍率（2 の 買った数 乗）
+const trailMult = () => Decimal.pow(2, state.trails || 0);
+// 変換で手に入る量（基本の量 × トレイル）
+const gainOf = (base) => trailMult().mul(base);
+const rate = () => D(state.de).add(1).mul(D(state.me).add(1)).mul(D(state.le).add(1)).mul(D(state.yume).add(1)).mul(trailMult());
 // セーブの中身を必ず正しい形にする（大きな数は Decimal、マイナスは 0、壊れた値は 0）
 function sanitize(s) {
   for (const k of BIG_KEYS) { const d = D(s[k]); s[k] = d.lt(0) ? ZERO() : d; }
@@ -149,6 +158,7 @@ function sanitize(s) {
     return { n: n.lt(0) ? ZERO() : n, b: Number.isFinite(g.b) && g.b > 0 ? Math.floor(g.b) : 0 };
   });
   s.room = s.room === 2 && s.room2 ? 2 : 1;
+  s.trails = Number.isFinite(s.trails) && s.trails > 0 ? Math.floor(s.trails) : 0;
   return s;
 }
 // 眠ったときにもらえる夢
@@ -601,8 +611,43 @@ function buildRoom2() {
     g.add(lm);
     genObjs.push({ cube, cubeMat, rings, pulse: 0 });
   });
+  // トレイル装置（奥）と、買った数だけ伸びる床の赤い線
+  const t = new THREE.Group();
+  t.position.set(TRAIL_POS.x, 0, TRAIL_POS.z);
+  scene.add(t);
+  add(new THREE.CylinderGeometry(0.3, 0.38, 0.6, 32), std(INK, { roughness: 0.4 }), 0, 0.3, 0, t);
+  const coreMat = new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 1.2 });
+  const core = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 4), coreMat);
+  core.position.y = 1.1;
+  t.add(core);
+  const tl = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.24), new THREE.MeshBasicMaterial({ map: floorLabel('TRAIL', '#d23a2c'), transparent: true, opacity: 0.8, depthWrite: false }));
+  tl.rotation.x = -Math.PI / 2;
+  tl.position.set(0, 0.006, 0.7);
+  t.add(tl);
+  const segMat = new THREE.MeshBasicMaterial({ color: ACCENT });
+  const segs = [];
+  for (let k = 0; k < 24; k++) {
+    // 装置から手前へ、少しずつ左右に揺れながら伸びる
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.01, 0.3), segMat);
+    seg.position.set(TRAIL_POS.x + Math.sin(k * 0.7) * 0.35, 0.008, TRAIL_POS.z + 1.1 + k * 0.34);
+    seg.rotation.y = Math.cos(k * 0.7) * 0.35;
+    seg.visible = false;
+    scene.add(seg);
+    segs.push(seg);
+  }
+  trailObj = { core, coreMat, segs, pulse: 0 };
 }
+let trailObj = null;
 function updateRoom2(t, dt) {
+  if (trailObj) {
+    const n = state.trails || 0;
+    trailObj.pulse = Math.max(0, trailObj.pulse - dt * 2);
+    trailObj.core.rotation.y = t * (1 + Math.min(n, 20) * 0.2);
+    trailObj.core.position.y = 1.1 + Math.sin(t * 2) * 0.06;
+    trailObj.core.scale.setScalar(1 + trailObj.pulse * 0.5);
+    trailObj.coreMat.emissiveIntensity = (n > 0 ? 1.4 : 0.4) + trailObj.pulse * 3;
+    trailObj.segs.forEach((sg, k) => { sg.visible = k < n; });
+  }
   genObjs.forEach((o, i) => {
     const g = state.gens[i];
     const has = g.n.gt(0);
@@ -745,6 +790,8 @@ const ACH = [
   { id: 'evo', name: '進化', desc: '生成機を進化させる', ok: (s) => s.gens.some((g) => g.b >= EVOLVE_EVERY) },
   { id: 'gen4', name: '全部そろった', desc: '生成機4を買う', ok: (s) => s.gens[3].b > 0 },
   { id: 'le1m', name: 'le 100万', desc: 'le を合計 100万 作る', ok: (s) => s.st.le.gte(1e6) },
+  { id: 'trail1', name: '足あと', desc: 'トレイルを買う', ok: (s) => (s.trails || 0) >= 1 },
+  { id: 'trail10', name: '長い道のり', desc: 'トレイルを 10本 買う', ok: (s) => (s.trails || 0) >= 10 },
 ];
 function checkAch() {
   for (const a of ACH) {
@@ -773,6 +820,7 @@ function renderStats() {
     ['作った me', fmt(st.me)],
     ['作った le', fmt(st.le)],
     ['生成機を買った数', fmt(state.gens.reduce((a, g) => a + g.b, 0))],
+    ['トレイル', `${state.trails || 0} 本（すべて ×${fmt(trailMult())}）`],
     ['眠った回数', fmt(state.sleeps)],
     ['夢', `${fmt(state.yume)}（ti ×${fmt(D(state.yume).add(1))}）`],
     ['実績', `${state.ach.length} / ${ACH.length}`],
@@ -835,6 +883,10 @@ const GUIDES = [
     h: 'ドアが開けられる',
     flow: () => chip('ai', `${fmt(ROOM2_COST)} ai`) + arrow + chip('box', 'ドアを開ける') + arrow + chip('box', '部屋2'),
     p: () => `右の壁のドアの前で ${K('<kbd>F</kbd>', '「開ける」')}。向こうには、変換装置とは別の「生成機」がある。` },
+  { id: 'trail', when: (s) => s.room2 && (s.trails || 0) === 0 && s.le.gte(TRAIL_BASE),
+    h: 'トレイルが買える',
+    flow: () => chip('le', `${fmt(TRAIL_BASE)} le`) + arrow + chip('box', 'トレイル') + arrow + chip('plain', 'すべて ×2'),
+    p: () => `部屋2の奥の赤い装置で買える。1本ごとに、毎秒の ti・変換で手に入る量・生成機が作る量がすべて2倍になる。` },
   { id: 'gen', when: (s) => s.room2 && s.room === 2 && s.gens[0].b === 0,
     h: '生成機を買ってみよう',
     flow: () => chip('ai', `${fmt(GENS[0].base)} ai`) + arrow + chip('box', '生成機1') + arrow + chip('le', 'le / 秒'),
@@ -1081,6 +1133,8 @@ function bindInput() {
     if (b.dataset.buymax !== undefined) buyGen(+b.dataset.buymax, true);
   });
   $('gClose').addEventListener('click', closeMachine);
+  $('tBuy').addEventListener('click', () => buyTrail(false));
+  $('tBuyMax').addEventListener('click', () => buyTrail(true));
   $('genPanel').addEventListener('click', (e) => { if (e.target.id === 'genPanel') closeMachine(); });
   $('btnRoom').addEventListener('click', unlockRoom);
   $('roomClose').addEventListener('click', closeMachine);
@@ -1150,6 +1204,10 @@ function collide() {
   if (state.room === 2) {
     state.x = Math.max(ROOM2_X - lim, Math.min(ROOM2_X + lim, state.x));
     state.z = Math.max(-lim, Math.min(lim, state.z));
+    {
+      const dx = state.x - TRAIL_POS.x, dz = state.z - TRAIL_POS.z, d = Math.hypot(dx, dz), min = TRAIL_R + PLAYER_R;
+      if (d < min && d > 0.0001) { state.x = TRAIL_POS.x + (dx / d) * min; state.z = TRAIL_POS.z + (dz / d) * min; }
+    }
     for (const pos of GEN_POS) {
       const dx = state.x - pos.x, dz = state.z - pos.z, d = Math.hypot(dx, dz), min = GEN_R + PLAYER_R;
       if (d < min && d > 0.0001) { state.x = pos.x + (dx / d) * min; state.z = pos.z + (dz / d) * min; }
@@ -1204,6 +1262,7 @@ function primaryAction(all) {
   if (state.room === 2) {
     const gi = nearGen();
     if (gi >= 0) buyGen(gi, all);
+    else if (nearTrail()) buyTrail(all);
     else if (nearDoor()) goRoom(1);
     return;
   }
@@ -1228,7 +1287,7 @@ function runGens(dt) {
   const g = state.gens;
   for (let i = 0; i < GENS.length; i++) {
     if (g[i].n.lte(0)) continue;
-    const made = g[i].n.mul(genMult(i)).mul(dt);
+    const made = g[i].n.mul(genMult(i)).mul(trailMult()).mul(dt);
     if (i === 0) {
       state.le = D(state.le).add(made);
       state.st.le = D(state.st.le).add(made);
@@ -1263,6 +1322,26 @@ function buyGen(i, all) {
   save();
   if (phase === 'menu') renderMachine();
 }
+
+// ===== トレイル =====
+const trailCost = () => new Decimal(TRAIL_BASE).mul(Decimal.pow(TRAIL_GROW, state.trails || 0));
+function buyTrail(all) {
+  let bought = 0;
+  for (let k = 0; k < (all ? 200 : 1); k++) {
+    const cost = trailCost();
+    if (D(state.le).lt(cost)) break;
+    state.le = D(state.le).sub(cost);
+    state.trails = (state.trails || 0) + 1;
+    bought++;
+  }
+  if (!bought) { Sound.play('no'); return; }
+  if (trailObj) trailObj.pulse = 1;
+  Sound.play('up');
+  toast(`トレイル +${bought}　すべて ×${fmt(trailMult())}`);
+  save();
+  if (phase === 'menu') renderMachine();
+}
+const nearTrail = () => state.room === 2 && Math.hypot(state.x - TRAIL_POS.x, state.z - TRAIL_POS.z) < 1.6;
 
 // ===== 部屋の行き来 =====
 function nearDoor() {
@@ -1321,7 +1400,7 @@ function convert(all, fromPanel = false, quiet = false) {
     p.classList.add('shake');
     return;
   }
-  const got = n.mul(c.gain);
+  const got = n.mul(gainOf(c.gain));
   payTi(n, c.cost);
   state.de = D(state.de).add(got);
   state.st.de = D(state.st.de).add(got);
@@ -1338,7 +1417,7 @@ function makeAi(all, quiet = false) {
   const c = conv2();
   const n = timesFor(c.cost, all);
   if (n.lte(0)) { if (!quiet) Sound.play('no'); return; }
-  const got = n.mul(c.gain);
+  const got = n.mul(gainOf(c.gain));
   payTi(n, c.cost);
   state.ai = D(state.ai).add(got);
   state.st.ai = D(state.st.ai).add(got);
@@ -1356,7 +1435,7 @@ function makeMe(all) {
   const c = conv3();
   const n = timesFor(c.cost, all);
   if (n.lte(0)) { Sound.play('no'); return; }
-  const got = n.mul(c.gain);
+  const got = n.mul(gainOf(c.gain));
   payTi(n, c.cost);
   state.me = D(state.me).add(got);
   state.st.me = D(state.st.me).add(got);
@@ -1478,7 +1557,7 @@ function openMachine() {
   if (!machineUnlocked()) return;
   // 部屋2：生成機の一覧
   if (state.room === 2) {
-    if (nearGen() >= 0) openOverlay('genPanel');
+    if (nearGen() >= 0 || nearTrail()) openOverlay('genPanel');
     return;
   }
   const n = nearMachine();
@@ -1522,7 +1601,7 @@ function renderMachine1() {
   const lv = state.lv || 0, c = conv(), ai = D(state.ai);
   $('mLv').textContent = lv >= CONV_MAX ? 'Lv MAX' : `Lv ${lv}`;
   $('mLvBar').innerHTML = Array.from({ length: CONV_MAX }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('');
-  $('mConvRate').textContent = `${c.cost} ti → ${c.gain} de`;
+  $('mConvRate').textContent = `${c.cost} ti → ${fmt(gainOf(c.gain))} de`;
   $('mConv1').disabled = D(state.ti).lt(c.cost);
   $('mConvAll').disabled = D(state.ti).lt(c.cost * 2);
   // ai づくりは、変換装置2を解放するまでは装置1で（Lv0 の性能）
@@ -1540,7 +1619,7 @@ function renderMachine1() {
     up.classList.remove('armed');
   } else {
     const next = CONV_LV[lv + 1];
-    $('mUpInfo').innerHTML = `Lv${lv + 1}：<b>${next.cost} ti → ${next.gain} de</b>　／　${fmt(UPGRADE_COST[lv])} ai`;
+    $('mUpInfo').innerHTML = `Lv${lv + 1}：<b>${next.cost} ti → ${fmt(gainOf(next.gain))} de</b>　／　${fmt(UPGRADE_COST[lv])} ai`;
     $('mUpWarn').style.visibility = 'visible';
     up.disabled = ai.lt(UPGRADE_COST[lv]);
     if (up.disabled) upArmed = false;
@@ -1570,7 +1649,7 @@ function renderGen(id) {
     $(p + 'UnlockCost').textContent = `${fmt(g.unlockCost)} ${g.unlockUnit}（いま ${fmt(has(g.unlockUnit))} ${g.unlockUnit}）`;
   } else {
     const c = g.table[Math.min(lv, g.max)];
-    $(p + 'Rate').textContent = `${fmt(c.cost)} ti → ${c.gain} ${g.unit}`;
+    $(p + 'Rate').textContent = `${fmt(c.cost)} ti → ${fmt(gainOf(c.gain))} ${g.unit}`;
     $(p + 'Make1').disabled = D(state.ti).lt(c.cost);
     $(p + 'MakeAll').disabled = D(state.ti).lt(c.cost * 2);
     const up = $(p + 'Up');
@@ -1582,7 +1661,7 @@ function renderGen(id) {
       up.classList.remove('armed');
     } else {
       const next = g.table[lv + 1];
-      $(p + 'UpInfo').innerHTML = `Lv${lv + 1}：<b>${fmt(next.cost)} ti → ${next.gain} ${g.unit}</b>　／　${fmt(g.upCost[lv])} ${g.upUnit}`;
+      $(p + 'UpInfo').innerHTML = `Lv${lv + 1}：<b>${fmt(next.cost)} ti → ${fmt(gainOf(next.gain))} ${g.unit}</b>　／　${fmt(g.upCost[lv])} ${g.upUnit}`;
       $(p + 'UpWarn').style.visibility = 'visible';
       up.disabled = has(g.upUnit).lt(g.upCost[lv]);
       if (up.disabled) upArmed = false;
@@ -1609,10 +1688,17 @@ function renderGens() {
       </div>`).join('');
     list.dataset.built = '1';
   }
+  {
+    const cost = trailCost(), can = D(state.le).gte(cost);
+    $('tN').textContent = `${state.trails || 0} 本（すべて ×${fmt(trailMult())}）`;
+    $('tSub').innerHTML = `次の1本：<b>${fmt(cost)} le</b>　→ すべて ×${fmt(trailMult().mul(2))}`;
+    $('tBuy').disabled = !can;
+    $('tBuyMax').disabled = !can;
+  }
   GENS.forEach((G, i) => {
     const g = state.gens[i], cost = genCost(i), evo = Math.floor(g.b / EVOLVE_EVERY);
     $('gN' + i).textContent = `${fmt(g.n)} 台`;
-    $('gSub' + i).innerHTML = `1台で毎秒 ${fmt(genMult(i))} ${G.makes}　／　次の1台：<b>${fmt(cost)} ${G.unit}</b>`;
+    $('gSub' + i).innerHTML = `1台で毎秒 ${fmt(trailMult().mul(genMult(i)))} ${G.makes}　／　次の1台：<b>${fmt(cost)} ${G.unit}</b>`;
     $('gEvo' + i).textContent = evo > 0 ? `進化 ${evo}（×${fmt(genMult(i))}）` : '';
     $('gBar' + i).style.width = ((g.b % EVOLVE_EVERY) / EVOLVE_EVERY) * 100 + '%';
     const can = D(state[G.unit]).gte(cost);
@@ -1673,7 +1759,7 @@ async function sleepAndWake() {
   await sleep(900);
   if (!alive()) return;
   // ここで時間が消える：資源と装置は 0 に、夢・自動化機・実績・統計は残る
-  Object.assign(state, { le: ZERO(), gens: newGens().map(() => ({ n: ZERO(), b: 0 })), room: 1, ti: ZERO(), de: ZERO(), ai: ZERO(), me: ZERO(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: ZERO() });
+  Object.assign(state, { trails: 0, le: ZERO(), gens: newGens().map(() => ({ n: ZERO(), b: 0 })), room: 1, ti: ZERO(), de: ZERO(), ai: ZERO(), me: ZERO(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: ZERO() });
   state.yume = D(state.yume).add(gain);
   state.sleeps = (state.sleeps || 0) + 1;
   state.x = BED.x; state.z = BED.z - 0.75; camY = 0.85; yaw = -2.48; pitch = 1.45;
@@ -1826,6 +1912,8 @@ function updateHud() {
   document.body.classList.toggle('room2', state.room === 2); // 黒い部屋では HUD を白く
   $('yumeChip').style.display = D(state.yume).gt(0) ? '' : 'none';
   $('yumeChip').textContent = `夢 ×${fmt(D(state.yume).add(1))}`;
+  $('trailChip').style.display = (state.trails || 0) > 0 ? '' : 'none';
+  $('trailChip').textContent = `トレイル ×${fmt(trailMult())}`;
   const lvTxt = (lv, max) => (lv >= max ? 'MAX' : lv);
   $('lvChip').textContent = `装置1 Lv ${lvTxt(state.lv || 0, CONV_MAX)}` + (state.c2 ? `・装置2 Lv ${lvTxt(state.lv2 || 0, AI_MAX)}` : '') + (state.c3 ? `・装置3 Lv ${lvTxt(state.lv3 || 0, ME_MAX)}` : '');
   // ai は、作れるようになったら（または持っていたら）表示
@@ -1837,11 +1925,12 @@ function updateHud() {
   if (state.room === 2) {
     const actEl = $('touchAct');
     const gi = phase === 'play' ? nearGen() : -1, door = phase === 'play' && nearDoor();
-    const on = gi >= 0 || door;
+    const tr = phase === 'play' && gi < 0 && nearTrail();
+    const on = gi >= 0 || door || tr;
     prompt.classList.toggle('show', on);
     actEl.classList.toggle('show', on);
-    actEl.classList.toggle('exam', gi < 0);
-    $('btnMachine').style.display = gi >= 0 ? '' : 'none';
+    actEl.classList.toggle('exam', gi < 0 && !tr);
+    $('btnMachine').style.display = gi >= 0 || tr ? '' : 'none';
     $('btnMachine').textContent = '一覧';
     if (!on) return;
     $('btnAct').style.display = '';
@@ -1851,6 +1940,13 @@ function updateHud() {
       actEl.classList.toggle('off', !can);
       $('btnAct').textContent = '買う';
       const txt = `${G.name}（${fmt(state.gens[gi].n)}台）：${fmt(cost)} ${G.unit}`;
+      $('promptText').innerHTML = IS_TOUCH ? txt : `${txt}　<span class="sub"><kbd>E</kbd> 買う　<kbd>Shift</kbd>+<kbd>E</kbd> まとめて　<kbd>F</kbd> 一覧</span>`;
+    } else if (tr) {
+      const cost = trailCost(), can = D(state.le).gte(cost);
+      prompt.classList.toggle('off', !can);
+      actEl.classList.toggle('off', !can);
+      $('btnAct').textContent = '買う';
+      const txt = `トレイル（${state.trails || 0}）：${fmt(cost)} le で すべて ×2`;
       $('promptText').innerHTML = IS_TOUCH ? txt : `${txt}　<span class="sub"><kbd>E</kbd> 買う　<kbd>Shift</kbd>+<kbd>E</kbd> まとめて　<kbd>F</kbd> 一覧</span>`;
     } else {
       prompt.classList.remove('off');
@@ -1906,7 +2002,7 @@ function updateHud() {
   $('btnAct').textContent = near === 1 ? '変換' : '作る';
   const can = D(state.ti).gte(c.cost);
   const need = () => fmt(new Decimal(c.cost).sub(state.ti).ceil());
-  const rateTxt = `${fmt(c.cost)} ti → ${c.gain} ${unit}`;
+  const rateTxt = `${fmt(c.cost)} ti → ${fmt(gainOf(c.gain))} ${unit}`;
   prompt.classList.toggle('off', !can);
   act.classList.toggle('off', !can);
   if (IS_TOUCH) {

@@ -304,6 +304,7 @@
   .g-n { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; }
   .g-sub { font-family: var(--mono); font-size: 11px; color: #555; margin-top: 2px; }
   .g-sub b { color: var(--ink); font-weight: 400; }
+  .trail-row { background: rgba(210,58,44,0.05); border-radius: 10px; padding: 12px 12px; border-top: none; margin-bottom: 4px; }
   .g-bar { height: 3px; background: #eee; border-radius: 3px; margin-top: 6px; overflow: hidden; }
   .g-bar i { display: block; height: 100%; width: 0; background: var(--accent); }
   @media (max-width: 480px) { .g-body { flex-direction: column; align-items: flex-start; } }
@@ -574,7 +575,7 @@
       <div class="kicker" id="hudKicker">TIME DELETED</div>
       <div class="res" id="hudTi">
         <div class="line"><span id="tiVal">0</span><span class="unit">ti</span></div>
-        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span></div>
+        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span> <span class="yume" id="trailChip" style="display:none"></span></div>
       </div>
       <div class="res" id="hudDe">
         <div class="line"><span id="deVal">0</span><span class="unit">de</span><span class="mult">×<span id="mult">1</span></span></div>
@@ -713,7 +714,14 @@
   <div class="panel">
     <div class="kicker">GENERATORS</div>
     <h2>生成機</h2>
-    <p class="ptext">生成機1は le を、2は生成機1を、3は2を、4は3を作る。同じ生成機を 10台買うごとに「進化」して、作る量が2倍になる。</p>
+    <p class="ptext">生成機1は le を、2は生成機1を、3は2を、4は3を作る。同じ生成機を 10台買うごとに「進化」して、作る量が2倍になる。le でトレイルを買うと、すべての倍率が2倍。</p>
+    <div class="grow-row trail-row">
+      <div class="g-head"><span class="g-no">TR</span><b>トレイル</b><span class="g-evo">すべて ×2</span></div>
+      <div class="g-body">
+        <div class="g-info"><div class="g-n" id="tN"></div><div class="g-sub" id="tSub"></div></div>
+        <div class="mbtns"><button class="btn-up" id="tBuy">買う</button><button class="btn-line" id="tBuyMax">まとめて</button></div>
+      </div>
+    </div>
     <div id="genList"></div>
     <div class="mhave" id="gHave"></div>
     <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="gClose" class="btn-solid">閉じる</button></div>
@@ -871,7 +879,7 @@
         <h3>部屋2と生成機</h3>
         <div class="flow"><span class="chip ai">1000万 ai</span><span class="arrow">→</span><span class="chip box">ドアを開ける</span><span class="arrow">→</span><span class="chip box">部屋2</span></div>
         <div class="flow"><span class="chip box">生成機4</span><span class="arrow">→</span><span class="chip box">生成機3</span><span class="arrow">→</span><span class="chip box">生成機2</span><span class="arrow">→</span><span class="chip box">生成機1</span><span class="arrow">→</span><span class="chip le">le</span></div>
-        <p>変換装置3を解放すると現れるドアを、ai で開けると黒い部屋に入れる。生成機は<b>放っておくだけで</b>下の段を作り続ける（生成機1は ai、2〜4は le で買う）。同じ生成機を10台買うごとに「進化」して作る量が2倍。<b>le は ti に ×(1 + le) の倍率</b>。眠ると le と生成機は 0 に戻るけど、ドアは開いたまま。</p>
+        <p>変換装置3を解放すると現れるドアを、ai で開けると黒い部屋に入れる。生成機は<b>放っておくだけで</b>下の段を作り続ける（生成機1は ai、2〜4は le で買う）。同じ生成機を10台買うごとに「進化」して作る量が2倍。<b>le は ti に ×(1 + le) の倍率</b>。部屋2の奥の装置で le を使って<b>トレイル</b>を買うと、毎秒の ti・変換で手に入る量・生成機が作る量が<b>すべて2倍</b>（1本ごとに値段は10倍）。眠ると le・生成機・トレイルは 0 に戻るけど、ドアは開いたまま。</p>
       </div>
     </section>
 
