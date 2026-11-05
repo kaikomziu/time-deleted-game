@@ -2,7 +2,11 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
 
 const $ = (id) => document.getElementById(id);
-const KEY_SAVE = 'tdg_save';
+// セーブはスロットごと（tdg_slot1〜3）
+let slot = 1;
+const saveKey = () => 'tdg_slot' + slot;
+// タッチ端末か（index.html で判定済み）
+const IS_TOUCH = !!window.TDG_TOUCH;
 
 // ===== 定数 =====
 const HALF = 6;            // 部屋は 12m 四方
@@ -11,6 +15,8 @@ const EYE = 1.6;           // 目線の高さ
 const PLAYER_R = 0.3;      // プレイヤーの当たり判定の半径
 const SPEED = 3.2;         // 歩く速さ（m/秒）
 const LOOK_SENS = 0.0022;  // マウス感度
+const TOUCH_SENS = 0.006;  // 指でなぞったときの視点感度（1px あたりのラジアン）
+const STICK_R = 48;        // スティックが最大まで倒れる距離（px）
 const CONVERT_COST = 10;   // 10 ti → 1 de
 const CONVERTER_R = 0.7;   // 変換装置の当たり判定
 const INTERACT_DIST = 1.9; // 変換装置を使える距離
@@ -29,6 +35,9 @@ const keys = {};
 let lastT = 0, saveTimer = 0, rafId = 0;
 let tutMoved = 0, tutLooked = 0, tutTimer = 0, tutDoneWait = 0;
 let leaving = false, dragging = false;
+// タッチ操作の状態
+let lookId = null, lookX = 0, lookY = 0;
+let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
 const newState = () => ({ ti: 0, de: 0, tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
@@ -59,7 +68,7 @@ function fmt(n) {
 function init() {
   if (renderer) return;
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, IS_TOUCH ? 1.25 : 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -267,6 +276,60 @@ function bindInput() {
     if (phase !== 'play') return;
     if (isLocked() || dragging) look(e.movementX, e.movementY);
   });
+  // ===== タッチ：画面をなぞって視点を動かす =====
+  cv.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || phase !== 'play') return;
+    e.preventDefault(); // 互換のマウスイベント（mousedown など）を出さない
+    if (lookId === null) {
+      lookId = e.pointerId; lookX = e.clientX; lookY = e.clientY;
+      try { cv.setPointerCapture(e.pointerId); } catch {}
+    }
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== lookId || phase !== 'play') return;
+    const k = TOUCH_SENS / LOOK_SENS;
+    look((e.clientX - lookX) * k, (e.clientY - lookY) * k);
+    lookX = e.clientX; lookY = e.clientY;
+  });
+  const endLook = (e) => { if (e.pointerId === lookId) lookId = null; };
+  cv.addEventListener('pointerup', endLook);
+  cv.addEventListener('pointercancel', endLook);
+
+  // ===== タッチ：左下のスティックで歩く =====
+  const stick = $('stick'), knob = $('knob');
+  const setStick = (x, y) => {
+    stickX = x; stickY = y;
+    knob.style.transform = `translate(${x * STICK_R}px, ${y * STICK_R}px)`;
+  };
+  stick.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (stickId !== null) return;
+    const r = stick.getBoundingClientRect();
+    stickId = e.pointerId; stickCX = r.left + r.width / 2; stickCY = r.top + r.height / 2;
+    try { stick.setPointerCapture(e.pointerId); } catch {}
+    moveStick(e);
+  });
+  const moveStick = (e) => {
+    if (e.pointerId !== stickId) return;
+    let x = (e.clientX - stickCX) / STICK_R, y = (e.clientY - stickCY) / STICK_R;
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    setStick(x, y);
+  };
+  stick.addEventListener('pointermove', moveStick);
+  const endStick = (e) => { if (e.pointerId === stickId) { stickId = null; setStick(0, 0); } };
+  stick.addEventListener('pointerup', endStick);
+  stick.addEventListener('pointercancel', endStick);
+  window.TDG_resetStick = () => { stickId = null; lookId = null; setStick(0, 0); };
+
+  // ===== タッチ：ボタン =====
+  $('btnPause').addEventListener('click', () => { if (phase === 'play') pause(); });
+  $('btnAct').addEventListener('click', () => { if (phase === 'play') convert(false); });
+  $('btnActAll').addEventListener('click', () => { if (phase === 'play') convert(true); });
+
+  // スマホはページを閉じても beforeunload が来ないことがあるので、隠れたときにも保存
+  document.addEventListener('visibilitychange', () => { if (document.hidden && phase !== 'off') save(); });
+
   document.addEventListener('pointerlockchange', () => {
     document.body.classList.toggle('locked', isLocked());
     // Esc でマウス固定が外れたら一時停止
@@ -287,16 +350,19 @@ function move(dt) {
   if (keys.KeyS || keys.ArrowDown) f -= 1;
   if (keys.KeyD || keys.ArrowRight) s += 1;
   if (keys.KeyA || keys.ArrowLeft) s -= 1;
-  if (!f && !s) return;
-  const len = Math.hypot(f, s);
-  f /= len; s /= len;
+  // スティック（上に倒すと前進）
+  f -= stickY;
+  s += stickX;
+  let len = Math.hypot(f, s);
+  if (len < 0.05) return;
+  if (len > 1) { f /= len; s /= len; len = 1; }
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   // 前方 = (-sin, -cos)、右 = (cos, -sin)
   state.x += (-sin * f + cos * s) * SPEED * dt;
   state.z += (-cos * f - sin * s) * SPEED * dt;
   collide();
   // 壁に向かって歩いても進むよう、歩こうとした距離で判定
-  if (state.tut === 1) tutMoved += SPEED * dt;
+  if (state.tut === 1) tutMoved += SPEED * dt * len;
 }
 
 function collide() {
@@ -361,6 +427,12 @@ const TUT = {
   5: { h: 'de が多いほど ti が速く貯まる', p: '1 秒の ti × (1 + 持っている de)。あとは放っておくだけ。', prog: () => tutTimer / 7 },
 };
 const TUT_LAST = 5;
+// タッチ端末では操作の説明だけ差し替える
+const TUT_TOUCH = {
+  1: { h: '左下のスティックで歩いてみよう', p: 'スティックを指で倒した方向に進みます' },
+  2: { h: '画面をなぞって見回そう', p: 'スティック以外の場所を指でなぞると、視点が動きます' },
+  4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて、右下の <b>変換</b> ボタンで <b>10 ti → 1 de</b>' },
+};
 
 function renderTut() {
   const card = $('tut');
@@ -372,8 +444,9 @@ function renderTut() {
     return;
   }
   $('tutKicker').textContent = `TUTORIAL ${String(state.tut).padStart(2, '0')} / ${String(TUT_LAST).padStart(2, '0')}`;
-  $('tutTitle').textContent = step.h;
-  $('tutText').innerHTML = step.p;
+  const text = (IS_TOUCH && TUT_TOUCH[state.tut]) || step;
+  $('tutTitle').textContent = text.h;
+  $('tutText').innerHTML = text.p;
   $('tutBar').style.width = '0%';
   card.classList.remove('show');
   void card.offsetWidth; // アニメーションをやり直す
@@ -408,7 +481,10 @@ async function say(text, ms = 1700) {
   await sleep(500);
 }
 
+let wakeToken = 0; // 演出の途中でタイトルへ戻ったら、続きを止めるための番号
 async function wakeUp() {
+  const my = ++wakeToken;
+  const alive = () => my === wakeToken;
   phase = 'wake';
   const w = $('wake');
   w.className = 'show';
@@ -416,20 +492,26 @@ async function wakeUp() {
   state.x = BED.x; state.z = BED.z - 0.75; camY = 0.85; yaw = -2.48; pitch = 1.45;
   await sleep(700);
   await say('……');
+  if (!alive()) return;
   await say('……ん？');
+  if (!alive()) return;
   await say('目が覚めたら、知らない真っ白な部屋にいた。', 2800);
+  if (!alive()) return;
   w.className = 'show blinking'; // まばたきしながら目を開ける
   await sleep(2700);
+  if (!alive()) return;
   w.className = '';
   // 起き上がってベッドの横に立つ
   const from = { x: state.x, z: state.z };
   await tween(2400, (k) => {
+    if (!alive()) return;
     const e = ease(k);
     state.x = lerp(from.x, -3.4, e);
     state.z = lerp(from.z, -4.4, e);
     camY = lerp(0.85, EYE, e);
     pitch = lerp(1.45, 0, e);
   });
+  if (!alive()) return;
   phase = 'play';
   state.tut = 1;
   renderTut();
@@ -446,9 +528,16 @@ function updateHud() {
   const prompt = $('prompt');
   const show = phase === 'play' && state.tut >= 4 && nearConverter();
   prompt.classList.toggle('show', show);
+  const act = $('touchAct');
+  act.classList.toggle('show', show);
   if (show) {
     const can = state.ti >= CONVERT_COST;
     prompt.classList.toggle('off', !can);
+    act.classList.toggle('off', !can);
+    if (IS_TOUCH) {
+      $('promptText').textContent = can ? '10 ti → 1 de に変換できる' : `あと ${fmt(Math.ceil(CONVERT_COST - state.ti))} ti 必要`;
+      return;
+    }
     $('promptText').innerHTML = can
       ? `10 ti → 1 de に変換　<span class="sub"><kbd>Shift</kbd>+<kbd>E</kbd> でまとめて</span>`
       : `あと ${fmt(Math.ceil(CONVERT_COST - state.ti))} ti 必要`;
@@ -500,11 +589,11 @@ function save() {
   state.yaw = yaw;
   state.pitch = pitch;
   state.savedAt = Date.now();
-  localStorage.setItem(KEY_SAVE, JSON.stringify(state));
+  localStorage.setItem(saveKey(), JSON.stringify(state));
 }
 function load() {
   try {
-    const s = JSON.parse(localStorage.getItem(KEY_SAVE));
+    const s = JSON.parse(localStorage.getItem(saveKey()));
     if (!s || typeof s.ti !== 'number') return null;
     return { ...newState(), ...s };
   } catch { return null; }
@@ -515,14 +604,16 @@ addEventListener('beforeunload', () => { if (phase !== 'off') save(); });
 function pause() {
   phase = 'paused';
   for (const k in keys) keys[k] = false;
+  if (window.TDG_resetStick) window.TDG_resetStick();
   $('pause').classList.add('active');
 }
 function resume() {
   $('pause').classList.remove('active');
   phase = 'play';
-  lockPointer();
+  if (!IS_TOUCH) lockPointer();
 }
 function toTitle() {
+  wakeToken++;
   leaving = true;
   save();
   // かるわかGAMES アカウントにログインしていれば、すぐクラウドにも保存
@@ -536,8 +627,10 @@ function toTitle() {
 
 // ===== タイトル画面から呼ばれる入口 =====
 window.TDG = {
-  start(isNew) {
+  start(isNew, n = 1) {
+    slot = n;
     init();
+    if (window.TDG_resetStick) window.TDG_resetStick();
     state = isNew ? newState() : load() || newState();
     yaw = state.yaw; pitch = state.pitch || 0; camY = EYE;
     tutMoved = tutLooked = tutTimer = tutDoneWait = 0;
@@ -562,6 +655,7 @@ window.TDG = {
   _debug: {
     get state() { return state; },
     get phase() { return phase; },
+    get slot() { return slot; },
     tick(ms) { cancelAnimationFrame(rafId); frame(lastT + ms); },
   },
 };

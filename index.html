@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f3f3f2">
 <title>Time Deleted Game.</title>
 <style>
   :root {
@@ -113,6 +114,41 @@
   .menu button { isolation: isolate; }
   .menu button:disabled { cursor: not-allowed; }
   .menu button:disabled > * { opacity: 0.3; }
+  /* ===== スマホ向けレイアウト ===== */
+  @media (max-width: 700px) {
+    #title .kicker { display: none; }
+    #title .head { top: calc(10vh + env(safe-area-inset-top)); }
+    #title .logo { font-size: 15vw; }
+    .acct { top: calc(2.5vh + env(safe-area-inset-top)); right: 4vw; padding: 7px 12px; gap: 8px; }
+    .acct .k { display: none; }
+    .clock { left: 76%; top: 22%; width: 26vw; }
+  }
+  /* 横向きのスマホ（高さが低い） */
+  @media (max-height: 500px) {
+    #title .head { top: 5vh; }
+    #title .kicker { display: none; }
+    #title .logo { font-size: min(13vh, 7vw); }
+    .menu { top: auto; bottom: 14vh; gap: 2px; }
+    .menu button { padding: 8px 14px 8px 0; }
+    .menu .jp { font-size: 17px; }
+    .status { bottom: 3vh; }
+    .hud #hudTi .line { font-size: 40px; }
+    .hud #hudDe .line { font-size: 26px; }
+    .hud .rate { margin: 4px 0 10px; padding-bottom: 8px; width: 180px; }
+  }
+  /* タッチ端末のプレイ画面：チュートリアルは右上、HUDは小さめ */
+  body.touch .hud #hudTi .line { font-size: 40px; }
+  body.touch .hud #hudDe .line { font-size: 26px; }
+  body.touch .hud .rate { width: 170px; margin: 4px 0 10px; padding-bottom: 8px; }
+  body.touch .hud .kicker { display: none; }
+  body.touch #tut { left: auto; right: calc(3vw + 52px); top: calc(3vh + env(safe-area-inset-top)); bottom: auto; width: min(360px, 52vw); padding: 14px 16px 12px; transform: translateY(-12px); }
+  body.touch #tut.show { transform: none; }
+  body.touch #tut h3 { font-size: 15px; margin-bottom: 4px; }
+  body.touch #tut p { font-size: 11px; line-height: 1.6; }
+  @media (max-width: 600px) {
+    body.touch #tut { left: 3vw; right: calc(3vw + 52px); width: auto; top: calc(3vh + env(safe-area-inset-top) + 120px); }
+  }
+
   /* 狭い画面ではメニュー幅を画面に合わせる */
   @media (max-width: 480px) {
     .menu button { width: 90vw; }
@@ -130,6 +166,23 @@
   .acct .sync.warn { color: var(--accent); }
   .acct:hover { background: var(--ink); color: #fff; border-color: var(--ink); }
   .acct:hover .sync { color: #bbb; }
+
+  /* ===== セーブスロット ===== */
+  #slots .panel { width: min(520px, 92vw); }
+  .slot { display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px 4px; border: none; border-top: 1px solid rgba(0,0,0,0.08); background: none; font-family: inherit; color: var(--ink); text-align: left; cursor: pointer; position: relative; }
+  .slot:last-of-type { border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .slot .no { font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em; color: var(--accent); width: 64px; flex-shrink: 0; }
+  .slot .info { flex: 1; min-width: 0; }
+  .slot .main { font-size: 17px; font-weight: 900; letter-spacing: 0.02em; }
+  .slot .main small { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--accent); margin: 0 10px 0 3px; }
+  .slot .sub { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); margin-top: 4px; }
+  .slot.empty .main { color: #bbb; font-weight: 400; }
+  .slot:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
+  .slot:disabled { cursor: not-allowed; opacity: 0.4; }
+  .slot .go { font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--muted); }
+  .slot .del { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(210,58,44,0.35); color: var(--accent); background: #fff; font-size: 14px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .slot .del:hover { background: var(--accent); color: #fff; }
+  #slots .panel .btns { justify-content: flex-end; }
 
   /* 画面下のステータス表示 */
   .status { position: absolute; left: 5vw; right: 3vw; bottom: 3vh; display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--muted); }
@@ -212,6 +265,29 @@
   #tut .bar { height: 2px; background: #e5e5e5; margin-top: 14px; border-radius: 2px; overflow: hidden; }
   #tut .bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
 
+  /* ===== スマホ操作 ===== */
+  .touch-only { display: none !important; }
+  body.touch .touch-only { display: flex !important; }
+  body.touch .pc-only { display: none !important; }
+  #play, #stage canvas { touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #stick { position: absolute; left: calc(6vw + env(safe-area-inset-left)); bottom: calc(6vh + env(safe-area-inset-bottom)); width: 130px; height: 130px; border-radius: 50%; background: rgba(255,255,255,0.55); border: 1px solid rgba(0,0,0,0.12); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: auto; align-items: center; justify-content: center; }
+  #stick::before { content: "MOVE"; position: absolute; top: -20px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em; color: var(--muted); }
+  #knob { width: 54px; height: 54px; border-radius: 50%; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,0.25); transform: translate(0, 0); }
+  .touch-btn { position: absolute; pointer-events: auto; border: none; font-family: var(--mono); cursor: pointer; align-items: center; justify-content: center; }
+  #btnPause { right: calc(3vw + env(safe-area-inset-right)); top: calc(3vh + env(safe-area-inset-top)); width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.12); color: var(--ink); font-size: 14px; letter-spacing: 0.05em; }
+  #touchAct { position: absolute; right: calc(6vw + env(safe-area-inset-right)); bottom: calc(7vh + env(safe-area-inset-bottom)); flex-direction: column; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
+  #touchAct.show { opacity: 1; }
+  #touchAct.show button { pointer-events: auto; }
+  #btnAct { width: 84px; height: 84px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; letter-spacing: 0.1em; font-weight: 700; box-shadow: 0 10px 24px rgba(210,58,44,0.35); }
+  #btnActAll { padding: 8px 14px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 11px; letter-spacing: 0.1em; }
+  #touchAct.off #btnAct { background: #bbb; box-shadow: none; }
+  #touchAct.off #btnActAll { display: none; }
+  #touchAct .touch-btn { position: static; }
+  /* タッチ端末では案内を変換ボタンの上（右下）に出す */
+  body.touch #prompt { top: auto; left: auto; right: calc(4vw + env(safe-area-inset-right)); bottom: calc(7vh + 150px + env(safe-area-inset-bottom)); transform: translateY(8px); padding: 8px 14px; font-size: 12px; }
+  body.touch #prompt.show { transform: none; }
+  body.touch #prompt .key { display: none; }
+
   .hint { position: absolute; right: 3vw; bottom: 3vh; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--muted); }
 
   /* 目覚めの演出 */
@@ -224,7 +300,7 @@
   #pause p { font-size: 13px; color: #666; line-height: 1.8; margin-top: -12px; }
 </style>
 <!-- かるわかGAMES アカウント（共通ログイン＋クラウドセーブ）。右下の標準バッジは消して、タイトルに専用ボタンを置く -->
-<script src="https://kaikomziu.github.io/game-links/js/karuwaka-account.js" data-game="time-deleted-game" data-keys="tdg_save,tdg_settings,tdg_deletedTime,tdg_introSeen" data-badge="off"></script>
+<script src="https://kaikomziu.github.io/game-links/js/karuwaka-account.js" data-game="time-deleted-game" data-keys="tdg_slot1,tdg_slot2,tdg_slot3,tdg_save,tdg_settings,tdg_deletedTime,tdg_introSeen" data-badge="off"></script>
 </head>
 <body>
 
@@ -262,7 +338,7 @@
   <div class="tag">BEFORE YOU START</div>
   <p>このゲームは<b>Roblox</b>の<br>「時間を無駄にする」というゲームに<br>インスパイアされています！</p>
   <div class="rule"></div>
-  <small>CLICK TO CONTINUE</small>
+  <small id="introHint">CLICK TO CONTINUE</small>
 </div>
 
 <!-- タイトル画面 -->
@@ -283,7 +359,7 @@
   </div>
   <div class="status">
     <div class="lost"><span class="dot"></span>これまでに消した時間<b id="lostTime">00:00:00</b></div>
-    <div>v0.3.0</div>
+    <div>v0.4.0</div>
   </div>
 </div>
 
@@ -310,7 +386,10 @@
       <p id="tutText"></p>
       <div class="bar"><i id="tutBar"></i></div>
     </div>
-    <div class="hint">ESC  一時停止</div>
+    <div class="hint pc-only">ESC  一時停止</div>
+    <div id="stick" class="touch-only"><div id="knob"></div></div>
+    <button id="btnPause" class="touch-btn touch-only" aria-label="一時停止">II</button>
+    <div id="touchAct" class="touch-only"><button id="btnAct" class="touch-btn">変換</button><button id="btnActAll" class="touch-btn">まとめて</button></div>
   </div>
   <div id="wake"><div id="wakeText"></div></div>
 </div>
@@ -329,6 +408,15 @@
 </div>
 
 <!-- 設定 -->
+<div id="slots" class="overlay">
+  <div class="panel">
+    <div class="kicker" id="slotsKicker">NEW GAME</div>
+    <h2 id="slotsTitle">セーブデータを選ぶ</h2>
+    <div id="slotList"></div>
+    <div class="btns"><button id="btnCloseSlots" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
 <div id="settings" class="overlay">
   <div class="panel">
     <div class="kicker">SETTINGS</div>
@@ -337,7 +425,7 @@
     <div class="row"><label for="se">効果音音量</label><div class="ctrl"><input id="se" type="range" min="0" max="100"><span class="val" id="seVal"></span></div></div>
     <div class="row"><label for="showIntro">起動時メッセージを再表示</label><label class="switch"><input id="showIntro" type="checkbox"><span></span></label></div>
     <div class="btns">
-      <button id="btnDeleteSave" class="btn-ghost">セーブ削除</button>
+      <span></span>
       <button id="btnCloseSettings" class="btn-solid">閉じる</button>
     </div>
   </div>
@@ -347,7 +435,24 @@
   // ===== ストレージのキー =====
   const KEY_INTRO = 'tdg_introSeen';
   const KEY_SETTINGS = 'tdg_settings';
-  const KEY_SAVE = 'tdg_save';
+  const KEY_SAVE = 'tdg_save';       // 旧形式（v0.3 まで）。スロット1へ引っ越す
+  const SLOTS = [1, 2, 3];
+  const slotKey = (n) => 'tdg_slot' + n;
+
+  // タッチ端末（スマホ・タブレット）かどうか
+  const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  if (IS_TOUCH) document.body.classList.add('touch');
+  window.TDG_TOUCH = IS_TOUCH;
+
+  // 旧セーブをスロット1へ引っ越す
+  if (localStorage.getItem(KEY_SAVE) && !localStorage.getItem(slotKey(1))) {
+    localStorage.setItem(slotKey(1), localStorage.getItem(KEY_SAVE));
+    localStorage.removeItem(KEY_SAVE);
+  }
+  function readSlot(n) {
+    try { const d = JSON.parse(localStorage.getItem(slotKey(n))); return d && typeof d.ti === 'number' ? d : null; }
+    catch { return null; }
+  }
 
   const $ = (id) => document.getElementById(id);
 
@@ -397,7 +502,7 @@
 
   // セーブがない場合は「途中から」を押せないようにする
   function refreshContinue() {
-    $('btnContinue').disabled = !localStorage.getItem(KEY_SAVE);
+    $('btnContinue').disabled = !SLOTS.some(readSlot);
   }
 
   // ===== 開始前メッセージ（最初の1回だけ） =====
@@ -409,6 +514,7 @@
     setTimeout(() => { intro.classList.remove('fadeout'); show('title'); }, 800);
   }
   $('intro').addEventListener('click', closeIntro);
+  if (IS_TOUCH) $('introHint').textContent = 'TAP TO CONTINUE';
   document.addEventListener('keydown', (e) => {
     if ($('intro').classList.contains('active') && (e.key === 'Enter' || e.key === ' ')) closeIntro();
   });
@@ -420,12 +526,62 @@
     alert('3D の読み込みに失敗しました。インターネット接続を確認して、ページを再読み込みしてください。');
     return false;
   }
-  $('btnStart').addEventListener('click', () => {
-    if (!needGame()) return;
-    if (localStorage.getItem(KEY_SAVE) && !confirm('セーブデータがあります。最初から始めますか？（上書きされます）')) return;
-    TDG.start(true);
-  });
-  $('btnContinue').addEventListener('click', () => { if (needGame()) TDG.start(false); });
+  // ===== セーブスロット画面 =====
+  // mode: 'new'（スタート）/ 'continue'（途中から）
+  let slotMode = 'new';
+  const fmtNum = (n) => Math.floor(n).toLocaleString('en-US');
+  function fmtDate(t) {
+    if (!t) return '';
+    const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  function renderSlots() {
+    $('slotsKicker').textContent = slotMode === 'new' ? 'NEW GAME' : 'CONTINUE';
+    $('slotsTitle').textContent = slotMode === 'new' ? 'どこに始める？' : 'どれを続ける？';
+    const list = $('slotList');
+    list.innerHTML = '';
+    for (const n of SLOTS) {
+      const d = readSlot(n);
+      const b = document.createElement('button');
+      b.className = 'slot' + (d ? '' : ' empty');
+      b.disabled = slotMode === 'continue' && !d;
+      const no = `<span class="no">SLOT ${String(n).padStart(2, '0')}</span>`;
+      if (d) {
+        const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
+        b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small></div>` +
+          `<div class="sub">${prog}　${fmtDate(d.savedAt)}</div></span>` +
+          `<span class="del" role="button" aria-label="削除" title="このセーブを削除">✕</span>`;
+      } else {
+        b.innerHTML = `${no}<span class="info"><div class="main">— 空き —</div><div class="sub">${slotMode === 'new' ? 'ここから始める' : 'セーブなし'}</div></span><span class="go">${slotMode === 'new' ? 'NEW' : ''}</span>`;
+      }
+      b.addEventListener('click', (e) => {
+        // ✕ ボタン：このスロットを削除
+        if (e.target.classList.contains('del')) {
+          if (confirm(`SLOT ${String(n).padStart(2, '0')} のセーブを削除しますか？（元に戻せません）`)) {
+            localStorage.removeItem(slotKey(n));
+            if (window.KaAccount && KaAccount.isLoggedIn()) KaAccount.saveNow();
+            renderSlots();
+            refreshContinue();
+          }
+          return;
+        }
+        if (!needGame()) return;
+        if (slotMode === 'new' && d && !confirm(`SLOT ${String(n).padStart(2, '0')} には続きがあります。最初から始めますか？（上書きされます）`)) return;
+        $('slots').classList.remove('active');
+        TDG.start(slotMode === 'new', n);
+      });
+      list.appendChild(b);
+    }
+  }
+  function openSlots(mode) {
+    slotMode = mode;
+    renderSlots();
+    $('slots').classList.add('active');
+  }
+  $('btnStart').addEventListener('click', () => openSlots('new'));
+  $('btnContinue').addEventListener('click', () => openSlots('continue'));
+  $('btnCloseSlots').addEventListener('click', () => $('slots').classList.remove('active'));
+  $('slots').addEventListener('click', e => { if (e.target.id === 'slots') $('slots').classList.remove('active'); });
   $('btnResume').addEventListener('click', () => TDG.resume());
   $('btnToTitle').addEventListener('click', () => TDG.toTitle());
 
@@ -446,9 +602,6 @@
   $('showIntro').addEventListener('change', e => {
     if (e.target.checked) localStorage.removeItem(KEY_INTRO);
     else localStorage.setItem(KEY_INTRO, '1');
-  });
-  $('btnDeleteSave').addEventListener('click', () => {
-    if (confirm('セーブデータを削除しますか？')) { localStorage.removeItem(KEY_SAVE); refreshContinue(); }
   });
   $('btnCloseSettings').addEventListener('click', () => $('settings').classList.remove('active'));
   $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('active'); });
