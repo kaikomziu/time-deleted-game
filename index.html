@@ -222,6 +222,16 @@
   .btn-solid  { background: var(--ink); border: 1px solid var(--ink); color: #fff; }
   .btn-solid:hover { background: #fff; color: var(--ink); }
 
+  /* 数字の表示の切り替え（セグメントボタン） */
+  .numrow { align-items: flex-start; flex-wrap: wrap; }
+  .numex { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px; letter-spacing: 0.04em; }
+  .seg { display: flex; border: 1px solid var(--ink); border-radius: 999px; overflow: hidden; }
+  .seg button { border: none !important; border-radius: 0 !important; padding: 7px 11px !important; font-size: 12px !important; background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .seg button + button { border-left: 1px solid rgba(0,0,0,0.15) !important; }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .seg button:hover:not(.on) { background: rgba(0,0,0,0.06); color: var(--ink); }
+  #settings .panel { width: min(480px, 94vw); }
+
   /* ===== プレイ画面（3D） ===== */
   #play { background: #f3f3f2; z-index: 5; }
   #stage, #stage canvas { position: absolute; inset: 0; display: block; }
@@ -528,6 +538,7 @@
     <h2>設定</h2>
     <div class="row"><label for="bgm">BGM音量</label><div class="ctrl"><input id="bgm" type="range" min="0" max="100"><span class="val" id="bgmVal"></span></div></div>
     <div class="row"><label for="se">効果音音量</label><div class="ctrl"><input id="se" type="range" min="0" max="100"><span class="val" id="seVal"></span></div></div>
+    <div class="row numrow"><div><label>数字の表示</label><div class="numex">例：<span id="numExample"></span></div></div><div class="seg" id="numFormat"></div></div>
     <div class="row"><label for="showIntro">起動時メッセージを再表示</label><label class="switch"><input id="showIntro" type="checkbox"><span></span></label></div>
     <div class="btns">
       <span></span>
@@ -590,13 +601,54 @@
   }, 250);
 
   // ===== 設定の読み書き =====
-  const defaultSettings = { bgm: 70, se: 70 };
+  const defaultSettings = { bgm: 70, se: 70, numFormat: 'std' };
   function loadSettings() {
     try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(KEY_SETTINGS) || '{}') }; }
     catch { return { ...defaultSettings }; }
   }
   function saveSettings(s) { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); }
   let settings = loadSettings();
+
+  // ===== 数字の表示形式（設定で切り替え） =====
+  // std: 12,345,678（10億から指数） / short: 12.3M / jp: 1234万 / sci: 1.23e7
+  const NUM_FORMATS = [
+    { id: 'std', label: '標準' },
+    { id: 'short', label: 'K・M・B' },
+    { id: 'jp', label: '万・億・兆' },
+    { id: 'sci', label: '指数' },
+  ];
+  const SHORT_UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+  const JP_UNITS = ['', '万', '億', '兆', '京', '垓', '𥝱', '穣', '溝', '澗', '正', '載', '極'];
+  // 有効数字3桁くらいで小数を付ける（1.23 / 12.3 / 123）。繰り上がらないよう切り捨て
+  const cut = (v, d) => (Math.floor(v * 10 ** d + 1e-9) / 10 ** d).toFixed(d);
+  const sig3 = (v) => (v < 10 ? cut(v, 2) : v < 100 ? cut(v, 1) : Math.floor(v).toString());
+  const toSci = (n) => {
+    const e = Math.floor(Math.log10(n));
+    let m = n / 10 ** e;
+    if (m >= 10) return `${cut(m / 10, 2)}e${e + 1}`; // 誤差で 10.00 になったとき
+    return `${cut(m, 2)}e${e}`;
+  };
+  function formatNum(n, mode = settings.numFormat) {
+    n = Math.floor(Number(n) || 0);
+    if (!isFinite(n)) return '∞';
+    if (n < 0) return '-' + formatNum(-n, mode);
+    if (mode === 'short') {
+      if (n < 1000) return String(n);
+      const k = Math.floor(Math.log10(n) / 3);
+      if (k >= SHORT_UNITS.length) return toSci(n);
+      return sig3(n / Math.pow(1000, k)) + SHORT_UNITS[k];
+    }
+    if (mode === 'jp') {
+      if (n < 10000) return n.toLocaleString('en-US');
+      const k = Math.floor(Math.log10(n) / 4);
+      if (k >= JP_UNITS.length) return toSci(n);
+      const v = n / Math.pow(10000, k);
+      return (v < 100 ? sig3(v) : Math.floor(v).toString()) + JP_UNITS[k];
+    }
+    if (mode === 'sci') return n < 1000 ? String(n) : toSci(n);
+    return n < 1e9 ? n.toLocaleString('en-US') : toSci(n);
+  }
+  window.formatNum = formatNum; // game.js の fmt() からも使う
 
   // ===== 画面切り替え =====
   function show(id) {
@@ -634,7 +686,7 @@
   // ===== セーブスロット画面 =====
   // mode: 'new'（スタート）/ 'continue'（途中から）
   let slotMode = 'new';
-  const fmtNum = (n) => Math.floor(n).toLocaleString('en-US');
+  const fmtNum = (n) => formatNum(n);
   function fmtDate(t) {
     if (!t) return '';
     const d = new Date(t), p = (n) => String(n).padStart(2, '0');
@@ -698,7 +750,21 @@
     el.style.setProperty('--p', el.value + '%');
     $(el.id + 'Val').textContent = el.value;
   }
+  // 数字の表示の切り替えボタン
+  function renderNumFormat() {
+    $('numFormat').innerHTML = NUM_FORMATS.map((f) =>
+      `<button data-f="${f.id}" class="${settings.numFormat === f.id ? 'on' : ''}">${f.label}</button>`).join('');
+    $('numExample').textContent = [1234, 12345678, 9.87e13].map((n) => formatNum(n)).join('　');
+  }
+  $('numFormat').addEventListener('click', (e) => {
+    const f = e.target.dataset && e.target.dataset.f;
+    if (!f) return;
+    settings.numFormat = f;
+    saveSettings(settings);
+    renderNumFormat();
+  });
   $('btnSettings').addEventListener('click', () => {
+    renderNumFormat();
     $('bgm').value = settings.bgm; paintRange($('bgm'));
     $('se').value = settings.se;   paintRange($('se'));
     $('showIntro').checked = !localStorage.getItem(KEY_INTRO);

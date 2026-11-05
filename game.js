@@ -95,7 +95,9 @@ function tween(ms, fn) {
     requestAnimationFrame(step);
   });
 }
+// 数字の表示（設定の「数字の表示」に合わせる。整形は index.html の formatNum）
 function fmt(n) {
+  if (window.formatNum) return window.formatNum(n);
   n = Math.floor(n);
   return n < 1e9 ? n.toLocaleString('en-US') : n.toExponential(2).replace('+', '');
 }
