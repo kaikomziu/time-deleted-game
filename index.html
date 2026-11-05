@@ -103,13 +103,14 @@
   #title .logo .out i { font-style: normal; color: var(--accent); -webkit-text-stroke: 0; }
 
   /* メニュー */
-  .menu { position: absolute; left: 5vw; top: 58vh; display: flex; flex-direction: column; gap: 6px; }
+  .menu { position: absolute; left: 5vw; bottom: calc(3vh + 46px); display: flex; flex-direction: column; gap: 6px; }
   .menu button { position: relative; display: flex; align-items: baseline; gap: 18px; width: 300px; padding: 12px 18px 12px 0; font-family: inherit; color: var(--ink); background: none; border: none; border-bottom: 1px solid rgba(0,0,0,0.15); cursor: pointer; text-align: left; overflow: hidden; opacity: 0; }
   #title.active .menu button { animation: fadeUp 0.6s ease forwards; }
   #title.active .menu button:nth-child(1) { animation-delay: 0.5s; }
   #title.active .menu button:nth-child(2) { animation-delay: 0.6s; }
   #title.active .menu button:nth-child(3) { animation-delay: 0.7s; }
   #title.active .menu button:nth-child(4) { animation-delay: 0.8s; }
+  #title.active .menu button:nth-child(5) { animation-delay: 0.9s; }
   .menu button::before { content: ""; position: absolute; inset: 0; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.35s cubic-bezier(.7,0,.2,1); z-index: -1; }
   .menu button > * { position: relative; transition: color 0.25s, transform 0.35s cubic-bezier(.2,.7,.2,1); }
   .menu .num { font-family: var(--mono); font-size: 12px; color: var(--accent); width: 22px; }
@@ -130,14 +131,19 @@
     .acct .k { display: none; }
     .clock { left: 76%; top: 22%; width: 26vw; }
   }
+  /* 高さが低めの画面（ノートPCなど）：メニューの間隔を詰める */
+  @media (max-height: 680px) {
+    .menu { gap: 2px; }
+    .menu button { padding: 8px 18px 8px 0; }
+  }
   /* 横向きのスマホ（高さが低い） */
   @media (max-height: 500px) {
     #title .head { top: 5vh; }
     #title .kicker { display: none; }
     #title .logo { font-size: min(13vh, 7vw); }
-    .menu { top: auto; bottom: 14vh; gap: 2px; }
-    .menu button { padding: 8px 14px 8px 0; }
-    .menu .jp { font-size: 17px; }
+    .menu { bottom: calc(3vh + 34px); gap: 0; }
+    .menu button { padding: 5px 14px 5px 0; }
+    .menu .jp { font-size: 15px; }
     .status { bottom: 3vh; }
     .hud #hudTi .line { font-size: 40px; }
     .hud #hudDe .line { font-size: 26px; }
@@ -342,6 +348,34 @@
   .toast { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 22px; color: var(--accent); letter-spacing: 0.1em; white-space: nowrap; animation: toastUp 1.4s ease-out forwards; }
   @keyframes toastUp { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -60px); } }
 
+  /* ===== クレジット ===== */
+  #credits { position: fixed; inset: 0; z-index: 40; background: #0b0b0b; color: #f2f2f2; display: none; overflow: hidden; cursor: pointer; }
+  #credits.active { display: block; animation: fadeIn 0.6s ease; }
+  #credits::before, #credits::after { content: ""; position: absolute; left: 0; right: 0; height: 22vh; z-index: 2; pointer-events: none; }
+  #credits::before { top: 0; background: linear-gradient(#0b0b0b, rgba(11,11,11,0)); }
+  #credits::after { bottom: 0; background: linear-gradient(rgba(11,11,11,0), #0b0b0b); }
+  #credits .roll { position: absolute; left: 50%; top: 100%; width: min(560px, 90vw); transform: translateX(-50%); text-align: center; }
+  #credits.active .roll { animation: rollUp var(--roll, 32s) linear forwards; }
+  @keyframes rollUp { from { top: 100%; transform: translate(-50%, 0); } to { top: 0; transform: translate(-50%, -100%); } }
+  .c-logo { font-weight: 900; line-height: 0.9; letter-spacing: -0.035em; font-size: clamp(48px, 9vw, 96px); margin-bottom: 18vh; }
+  .c-logo span { display: block; }
+  .c-logo .del { color: var(--accent); position: relative; width: fit-content; margin: 0 auto; }
+  .c-logo .del::after { content: ""; position: absolute; left: -2%; right: -2%; top: 52%; height: 0.08em; background: #f2f2f2; }
+  .c-logo .out { color: transparent; -webkit-text-stroke: 2px #f2f2f2; }
+  .c-logo .out i { font-style: normal; color: var(--accent); -webkit-text-stroke: 0; }
+  .c-sec { margin-bottom: 14vh; }
+  .c-k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4em; color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .c-k::before, .c-k::after { content: ""; width: 26px; height: 1px; background: #555; }
+  .c-v { font-size: 12px; color: #888; margin: 6px 0 16px; letter-spacing: 0.1em; }
+  .c-n { font-size: clamp(22px, 3.2vw, 32px); font-weight: 900; letter-spacing: 0.04em; margin-top: 10px; }
+  .c-n.big { font-size: clamp(44px, 8vw, 80px); color: var(--accent); }
+  .c-s { font-family: var(--mono); font-size: 12px; color: #888; letter-spacing: 0.12em; margin-top: 4px; }
+  .c-thanks .c-s { font-family: inherit; font-size: 14px; color: #bbb; margin-top: 14px; }
+  .c-end { font-family: var(--mono); font-size: 12px; letter-spacing: 0.35em; color: #777; padding-bottom: 46vh; }
+  .c-hint { position: absolute; left: 0; right: 0; bottom: 3vh; text-align: center; z-index: 3; font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: #666; }
+  #creditsClose { position: absolute; right: 3vw; top: 3vh; z-index: 3; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #444; background: transparent; color: #ddd; cursor: pointer; font-size: 14px; }
+  #creditsClose:hover { background: #f2f2f2; color: #0b0b0b; }
+
   /* ===== あそびかた ===== */
   #help .panel { width: min(640px, 94vw); max-height: 92vh; overflow-y: auto; }
   .chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; border: 1px solid var(--ink); background: #fff; color: var(--ink); }
@@ -495,6 +529,7 @@
     <button id="btnSettings"><span class="num">02</span><span class="jp">設定</span><span class="en">SETTINGS</span></button>
     <button id="btnContinue"><span class="num">03</span><span class="jp">途中から</span><span class="en">CONTINUE</span></button>
     <button id="btnHelp"><span class="num">04</span><span class="jp">あそびかた</span><span class="en">HOW TO PLAY</span></button>
+    <button id="btnCredits"><span class="num">05</span><span class="jp">クレジット</span><span class="en">CREDITS</span></button>
   </div>
   <div class="status">
     <div class="lost"><span class="dot"></span>これまでに消した時間<b id="lostTime">00:00:00</b></div>
@@ -672,6 +707,31 @@
     <div id="statList"></div>
     <div class="btns"><span></span><button id="statsClose" class="btn-solid">戻る</button></div>
   </div>
+</div>
+
+<!-- クレジット（エンドロールのように流れる） -->
+<div id="credits">
+  <button id="creditsClose" aria-label="閉じる">✕</button>
+  <div class="roll" id="creditsRoll">
+    <div class="c-logo"><span>Time</span><span class="del">Deleted</span><span class="out">game<i>.</i></span></div>
+    <div class="c-sec"><div class="c-k">CREATED BY</div><div class="c-v">作者</div><div class="c-n">かるわか</div></div>
+    <div class="c-sec"><div class="c-k">CODE</div><div class="c-v">プログラム</div><div class="c-n">Claude AI</div><div class="c-s">Anthropic</div></div>
+    <div class="c-sec"><div class="c-k">INSPIRED BY</div><div class="c-v">インスパイア</div>
+      <div class="c-n">時間を無駄にする</div><div class="c-s">Roblox</div>
+      <div class="c-n">Cookie Clicker</div>
+      <div class="c-n">Revolution Idle</div>
+      <div class="c-s">ほか、様々なゲーム</div>
+    </div>
+    <div class="c-sec"><div class="c-k">POWERED BY</div><div class="c-v">使っている技術</div>
+      <div class="c-n">three.js</div><div class="c-s">3D</div>
+      <div class="c-n">break_infinity.js</div><div class="c-s">大きな数</div>
+      <div class="c-n">Web Audio API</div><div class="c-s">音</div>
+    </div>
+    <div class="c-sec"><div class="c-k">ACCOUNT</div><div class="c-v">アカウント・クラウドセーブ</div><div class="c-n">かるわかGAMES</div></div>
+    <div class="c-sec c-thanks"><div class="c-k">SPECIAL THANKS</div><div class="c-v">スペシャル・サンクス</div><div class="c-n big">あなた！</div><div class="c-s">遊んでくれて、時間を消してくれて、ありがとう。</div></div>
+    <div class="c-end">THANK YOU FOR DELETING YOUR TIME.</div>
+  </div>
+  <small class="c-hint" id="creditsHint">CLICK TO CLOSE</small>
 </div>
 
 <!-- あそびかた -->
@@ -1019,6 +1079,23 @@
   }
   $('btnStart').addEventListener('click', () => openSlots('new'));
   $('btnContinue').addEventListener('click', () => openSlots('continue'));
+  // クレジット：開くと下から流れる。クリック・タップ・Esc で閉じる
+  function openCredits() {
+    const c = $('credits'), roll = $('creditsRoll');
+    $('creditsHint').textContent = IS_TOUCH ? 'TAP TO CLOSE' : 'CLICK TO CLOSE';
+    c.classList.remove('active');
+    void c.offsetWidth; // アニメーションを最初から
+    c.classList.add('active');
+    // 流れる速さを一定に（長さに合わせて時間を決める）
+    c.style.setProperty('--roll', Math.max(20, (roll.offsetHeight + innerHeight) / 70) + 's');
+  }
+  const closeCredits = () => $('credits').classList.remove('active');
+  $('btnCredits').addEventListener('click', openCredits);
+  $('credits').addEventListener('click', closeCredits);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('credits').classList.contains('active')) closeCredits(); });
+  // 流れ終わったら自動で閉じる
+  $('creditsRoll').addEventListener('animationend', closeCredits);
+
   // あそびかた（タイトルからも、一時停止メニューからも開く）
   $('btnHelp').addEventListener('click', () => { window.TDG_helpFrom = 'title'; $('help').classList.add('active'); $('help').querySelector('.panel').scrollTop = 0; });
   $('helpClose').addEventListener('click', () => {
