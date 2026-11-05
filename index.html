@@ -250,12 +250,12 @@
   .hud .lvchip { margin-left: 6px; font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.1em; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--ink); color: var(--ink); align-self: center; }
 
   /* ===== 変換装置1のパネル ===== */
-  #machine .panel { width: min(540px, 94vw); max-height: 92vh; overflow-y: auto; }
-  #machine h2 { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
-  #machine .lv { font-family: var(--mono); font-size: 13px; font-weight: 400; letter-spacing: 0.15em; color: #fff; background: var(--ink); padding: 4px 12px; border-radius: 999px; }
-  #mLvBar { display: flex; gap: 6px; margin-bottom: 18px; }
-  #mLvBar i { flex: 1; height: 4px; border-radius: 4px; background: #e5e5e5; }
-  #mLvBar i.on { background: var(--accent); }
+  #machine .panel, #machine2 .panel { width: min(540px, 94vw); max-height: 92vh; overflow-y: auto; }
+  #machine2 h2, #machine h2 { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  #machine2 .lv, #machine .lv { font-family: var(--mono); font-size: 13px; font-weight: 400; letter-spacing: 0.15em; color: #fff; background: var(--ink); padding: 4px 12px; border-radius: 999px; }
+  #m2LvBar, #mLvBar { display: flex; gap: 6px; margin-bottom: 18px; }
+  #m2LvBar i, #mLvBar i { flex: 1; height: 4px; border-radius: 4px; background: #e5e5e5; }
+  #m2LvBar i.on, #mLvBar i.on { background: var(--accent); }
   .mrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(0,0,0,0.08); }
   .mrow .mt { font-size: 15px; font-weight: 900; letter-spacing: 0.03em; }
   .mrow .ms { font-family: var(--mono); font-size: 12px; color: #555; margin-top: 4px; letter-spacing: 0.04em; }
@@ -271,8 +271,9 @@
   .mhave { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; padding-top: 14px; border-top: 1px solid rgba(0,0,0,0.08); }
   .mhave b { color: var(--ink); font-weight: 400; }
   .mhave .sep { margin: 0 8px; color: #ccc; }
-  #machine .btns { align-items: center; }
-  #machine .hintk { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; color: var(--muted); }
+  #machine .btns, #machine2 .btns { align-items: center; }
+  .mnote { font-size: 12px; color: #555; padding: 12px 0; border-top: 1px solid rgba(0,0,0,0.08); }
+  #machine2 .hintk, #machine .hintk { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; color: var(--muted); }
   @media (max-width: 480px) { .mrow { flex-direction: column; align-items: flex-start; gap: 10px; } }
   #btnMachine { padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--ink); color: var(--ink); font-size: 11px; letter-spacing: 0.1em; }
 
@@ -423,7 +424,7 @@
         <div class="line"><span id="deVal">0</span><span class="unit">de</span><span class="mult">×<span id="mult">1</span></span></div>
       </div>
       <div class="res" id="hudAi">
-        <div class="line"><span id="aiVal">0</span><span class="unit">ai</span><span class="lvchip">装置 Lv <span id="lvVal">0</span></span></div>
+        <div class="line"><span id="aiVal">0</span><span class="unit">ai</span><span class="lvchip" id="lvChip">装置1 Lv 0</span></div>
       </div>
     </div>
     <div class="cross"></div>
@@ -454,7 +455,7 @@
       <div><div class="mt">ti を de に変換</div><div class="ms" id="mConvRate"></div></div>
       <div class="mbtns"><button id="mConv1" class="btn-solid">変換</button><button id="mConvAll" class="btn-line">まとめて</button></div>
     </div>
-    <div class="mrow">
+    <div class="mrow" id="mAiRow">
       <div><div class="mt">ti を ai にする</div><div class="ms" id="mAiRate"></div></div>
       <div class="mbtns"><button id="mAi1" class="btn-solid">作る</button><button id="mAiAll" class="btn-line">まとめて</button></div>
     </div>
@@ -462,8 +463,39 @@
       <div><div class="mt">アップグレード</div><div class="ms" id="mUpInfo"></div><div class="warn" id="mUpWarn">強化すると、持っている de は 0 になる</div></div>
       <div class="mbtns"><button id="mUp" class="btn-up">強化</button></div>
     </div>
+    <div class="mnote" id="mAiMoved" style="display:none">ai は <b>変換装置2</b> で作るようになった</div>
     <div class="mhave">所持　<b id="mTi">0</b> ti<span class="sep">/</span><b id="mDe">0</b> de<span class="sep">/</span><b id="mAi">0</b> ai</div>
     <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="mClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 変換装置2 -->
+<div id="machine2" class="overlay">
+  <div class="panel">
+    <div class="kicker">CONVERTER 02</div>
+    <h2>変換装置2 <span class="lv" id="m2Lv">LOCKED</span></h2>
+    <div id="m2LvBar" class="lvbar2"></div>
+    <div id="m2Lock">
+      <div class="mrow">
+        <div><div class="mt">ti を ai に変える装置</div><div class="ms">解放すると、ai はここで作るようになる。強化すると 1回で作れる ai が増える</div></div>
+      </div>
+      <div class="mrow">
+        <div><div class="mt">解放</div><div class="ms" id="m2UnlockCost"></div></div>
+        <div class="mbtns"><button id="m2Unlock" class="btn-up">解放する</button></div>
+      </div>
+    </div>
+    <div id="m2Body" style="display:none">
+      <div class="mrow">
+        <div><div class="mt">ti を ai にする</div><div class="ms" id="m2Rate"></div></div>
+        <div class="mbtns"><button id="m2Make1" class="btn-solid">作る</button><button id="m2MakeAll" class="btn-line">まとめて</button></div>
+      </div>
+      <div class="mrow">
+        <div><div class="mt">アップグレード</div><div class="ms" id="m2UpInfo"></div><div class="warn" id="m2UpWarn">強化すると、持っている ai は 0 になる</div></div>
+        <div class="mbtns"><button id="m2Up" class="btn-up">強化</button></div>
+      </div>
+    </div>
+    <div class="mhave">所持　<b id="m2Ti">0</b> ti<span class="sep">/</span><b id="m2Ai">0</b> ai</div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="m2Close" class="btn-solid">閉じる</button></div>
   </div>
 </div>
 
@@ -622,7 +654,7 @@
       if (d) {
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
         const aiTxt = d.ai || d.lv ? `${fmtNum(d.ai || 0)}<small>ai</small>` : '';
-        const lvTxt = d.lv ? `装置 Lv${d.lv}　` : '';
+        const lvTxt = (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '');
         b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
           `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
           `<span class="del" role="button" aria-label="削除" title="このセーブを削除">✕</span>`;
