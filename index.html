@@ -312,6 +312,10 @@
   #stick::before { content: "MOVE"; position: absolute; top: -20px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em; color: var(--muted); }
   #knob { width: 54px; height: 54px; border-radius: 50%; background: var(--ink); box-shadow: 0 6px 16px rgba(0,0,0,0.25); transform: translate(0, 0); }
   .touch-btn { position: absolute; pointer-events: auto; border: none; font-family: var(--mono); cursor: pointer; align-items: center; justify-content: center; }
+  /* 走るボタン（スティックの上） */
+  #btnRun { left: calc(6vw + env(safe-area-inset-left) + 25px); bottom: calc(6vh + env(safe-area-inset-bottom) + 160px); width: 80px; height: 36px; border-radius: 999px; background: rgba(255,255,255,0.8); border: 1px solid var(--ink); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; transition: background 0.15s, color 0.15s; }
+  #btnRun.on { background: var(--ink); color: #fff; }
+  #btnRun.on::after { content: " ON"; font-family: var(--mono); font-size: 10px; color: var(--accent); }
   #btnPause { right: calc(3vw + env(safe-area-inset-right)); top: calc(3vh + env(safe-area-inset-top)); width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.12); color: var(--ink); font-size: 14px; letter-spacing: 0.05em; }
   #touchAct { position: absolute; right: calc(6vw + env(safe-area-inset-right)); bottom: calc(7vh + env(safe-area-inset-bottom)); flex-direction: column; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
   #touchAct.show { opacity: 1; }
@@ -434,6 +438,7 @@
     <div class="hint pc-only">ESC  一時停止</div>
     <div id="stick" class="touch-only"><div id="knob"></div></div>
     <button id="btnPause" class="touch-btn touch-only" aria-label="一時停止">II</button>
+    <button id="btnRun" class="touch-btn touch-only" aria-label="走る">走る</button>
     <div id="touchAct" class="touch-only"><button id="btnAct" class="touch-btn">変換</button><button id="btnActAll" class="touch-btn">まとめて</button><button id="btnMachine" class="touch-btn" style="display:none">装置</button></div>
   </div>
   <div id="wake"><div id="wakeText"></div></div>

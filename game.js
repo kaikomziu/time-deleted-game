@@ -14,6 +14,8 @@ const HEIGHT = 4;          // 天井の高さ
 const EYE = 1.6;           // 目線の高さ
 const PLAYER_R = 0.3;      // プレイヤーの当たり判定の半径
 const SPEED = 3.2;         // 歩く速さ（m/秒）
+const RUN_MULT = 1.8;      // 走ると何倍速くなるか
+const FOV = 70, FOV_RUN = 78; // 走っているときは視野を少し広げてスピード感を出す
 const LOOK_SENS = 0.0022;  // マウス感度
 const TOUCH_SENS = 0.006;  // 指でなぞったときの視点感度（1px あたりのラジアン）
 const STICK_R = 48;        // スティックが最大まで倒れる距離（px）
@@ -49,6 +51,7 @@ let tutMoved = 0, tutLooked = 0, tutTimer = 0, tutDoneWait = 0;
 let leaving = false, dragging = false;
 // タッチ操作の状態
 let lookId = null, lookX = 0, lookY = 0;
+let runToggle = false, moving = false; // スマホの「走る」ボタン（押すたびに切り替え）・いま動いているか
 let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
 const newState = () => ({ ti: 0, de: 0, ai: 0, lv: 0, tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
@@ -352,6 +355,12 @@ function bindInput() {
   stick.addEventListener('pointercancel', endStick);
   window.TDG_resetStick = () => { stickId = null; lookId = null; setStick(0, 0); };
 
+  // ===== タッチ：走るボタン（押すたびに ON / OFF） =====
+  $('btnRun').addEventListener('click', () => {
+    runToggle = !runToggle;
+    $('btnRun').classList.toggle('on', runToggle);
+  });
+
   // ===== タッチ：ボタン =====
   $('btnPause').addEventListener('click', () => { if (phase === 'play') pause(); });
   $('btnAct').addEventListener('click', () => { if (phase === 'play') convert(false); });
@@ -384,7 +393,11 @@ function look(dx, dy) {
 }
 
 // ===== 移動と当たり判定 =====
+// Shift（PC）か「走る」ボタン（スマホ）で走る
+const isRunning = () => !!(keys.ShiftLeft || keys.ShiftRight || runToggle);
+
 function move(dt) {
+  moving = false;
   let f = 0, s = 0;
   if (keys.KeyW || keys.ArrowUp) f += 1;
   if (keys.KeyS || keys.ArrowDown) f -= 1;
@@ -395,11 +408,13 @@ function move(dt) {
   s += stickX;
   let len = Math.hypot(f, s);
   if (len < 0.05) return;
+  moving = true;
+  const speed = SPEED * (isRunning() ? RUN_MULT : 1);
   if (len > 1) { f /= len; s /= len; len = 1; }
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   // 前方 = (-sin, -cos)、右 = (cos, -sin)
-  state.x += (-sin * f + cos * s) * SPEED * dt;
-  state.z += (-cos * f - sin * s) * SPEED * dt;
+  state.x += (-sin * f + cos * s) * speed * dt;
+  state.z += (-cos * f - sin * s) * speed * dt;
   collide();
   // 壁に向かって歩いても進むよう、歩こうとした距離で判定
   if (state.tut === 1) tutMoved += SPEED * dt * len;
@@ -542,7 +557,7 @@ function toast(text) {
 
 // ===== チュートリアル =====
 const TUT = {
-  1: { h: 'WASD で歩いてみよう', p: '<kbd>W</kbd> 前　<kbd>A</kbd> 左　<kbd>S</kbd> 後ろ　<kbd>D</kbd> 右', prog: () => tutMoved / 4 },
+  1: { h: 'WASD で歩いてみよう', p: '<kbd>W</kbd> 前　<kbd>A</kbd> 左　<kbd>S</kbd> 後ろ　<kbd>D</kbd> 右　<kbd>Shift</kbd> を押しながらで走る', prog: () => tutMoved / 4 },
   2: { h: 'マウスで周りを見回そう', p: '画面をクリックするとマウスで視点が動きます（<kbd>Esc</kbd> で一時停止）', prog: () => tutLooked / 3 },
   3: { h: 'ここでは時間が ti になる', p: '1 秒ごとに <b>1 ti</b> 貯まっていく。10 ti 貯まるまで待ってみよう', prog: () => state.ti / CONVERT_COST },
   4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて <kbd>E</kbd> を押すと <b>10 ti → 1 de</b>', prog: () => (state.de >= 1 ? 1 : 0) },
@@ -551,7 +566,7 @@ const TUT = {
 const TUT_LAST = 5;
 // タッチ端末では操作の説明だけ差し替える
 const TUT_TOUCH = {
-  1: { h: '左下のスティックで歩いてみよう', p: 'スティックを指で倒した方向に進みます' },
+  1: { h: '左下のスティックで歩いてみよう', p: 'スティックを指で倒した方向に進みます。<b>走る</b> ボタンで走れます' },
   2: { h: '画面をなぞって見回そう', p: 'スティック以外の場所を指でなぞると、視点が動きます' },
   4: { h: '中央の装置で de に変換しよう', p: '装置に近づいて、右下の <b>変換</b> ボタンで <b>10 ti → 1 de</b>' },
 };
@@ -690,6 +705,12 @@ function frame(now) {
 
   if (phase === 'play') move(dt);
   camera.position.set(state.x, camY, state.z);
+  // 走っている間は視野を少し広げる（なめらかに）
+  const fovTarget = phase === 'play' && moving && isRunning() ? FOV_RUN : FOV;
+  if (Math.abs(camera.fov - fovTarget) > 0.05) {
+    camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 8);
+    camera.updateProjectionMatrix();
+  }
   camera.rotation.set(pitch, yaw, 0);
 
   // 時計は逆回転（秒針1周60秒）
