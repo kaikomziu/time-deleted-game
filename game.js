@@ -58,7 +58,7 @@ let renderer, scene, camera;
 let hands = {};
 const machines = {}; // 1: 変換装置1、2: 変換装置2（3D の部品と演出の状態）
 let state = null;
-let phase = 'off';          // off | wake | play | paused
+let phase = 'off';          // off | wake | play | menu（装置パネル）| paused
 let yaw = 0, pitch = 0, camY = EYE;
 const keys = {};
 let lastT = 0, saveTimer = 0, rafId = 0;
