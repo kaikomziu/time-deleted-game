@@ -61,6 +61,23 @@ const AUTO_COST = { 1: 25, 2: 50000 };   // ai
 const AUTO_INTERVAL = 5;
 // 眠る（転生）：この周回で SLEEP_MIN ti 消すと眠れる。夢 = floor(√(この周回の ti ÷ SLEEP_MIN))
 const SLEEP_MIN = 1e9;
+// ===== 部屋2（黒い部屋）とジェネレータ =====
+// 部屋2は部屋1から遠く離れた場所（x = ROOM2_X）に作り、ドアでワープする
+const ROOM2_X = 40;
+const ROOM2_COST = 1e7;                        // 部屋2の解放にかかる ai
+const DOOR1 = { x: 5.3, z: -1.8 };             // 部屋1のドアの前
+const DOOR2 = { x: ROOM2_X - 5.3, z: -1.8 };   // 部屋2のドアの前
+// 生成機：1 は le を作り、2 は 1 を、3 は 2 を、4 は 3 を作る（1台あたり毎秒 1）。
+// 買うたびに値段が grow 倍。同じ生成機を EVOLVE_EVERY 台買うごとに「進化」して、作る量が2倍
+const GENS = [
+  { name: '生成機1', makes: 'le', unit: 'ai', base: 1e6, grow: 1.5 },
+  { name: '生成機2', makes: '生成機1', unit: 'le', base: 100, grow: 2.5 },
+  { name: '生成機3', makes: '生成機2', unit: 'le', base: 1e4, grow: 4 },
+  { name: '生成機4', makes: '生成機3', unit: 'le', base: 1e7, grow: 6 },
+];
+const EVOLVE_EVERY = 10;
+const GEN_POS = [-3.6, -1.2, 1.2, 3.6].map((dx) => ({ x: ROOM2_X + dx, z: -1.2 }));
+const GEN_R = 0.45; // 生成機の当たり判定
 // 装置の置き場所
 const MACHINE_POS = { 1: { x: 0, z: 0 }, 2: { x: 3.4, z: 3.2 }, 3: { x: -3.4, z: 3.2 } };
 const CONVERTER_R = 0.7;   // 変換装置の当たり判定
@@ -93,8 +110,9 @@ let lookId = null, lookX = 0, lookY = 0;
 let runToggle = false, moving = false; // スマホの「走る」ボタン（押すたびに切り替え）・いま動いているか
 let stickId = null, stickCX = 0, stickCY = 0, stickX = 0, stickY = 0;
 
-const newStats = () => ({ play: 0, totalTi: 0, bestRate: 0, de: 0, ai: 0, me: 0 });
-const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
+const newStats = () => ({ play: 0, totalTi: 0, bestRate: 0, de: 0, ai: 0, me: 0, le: 0 });
+const newGens = () => GENS.map(() => ({ n: 0, b: 0 })); // n = 持っている台数（作られた分も含む）、b = 買った台数
+const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, le: 0, room2: false, room: 1, gens: newGens(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
   auto1: false, auto1On: true, auto2: false, auto2On: true,
   yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
@@ -112,10 +130,10 @@ const D = (v) => {
   } catch { return new Decimal(0); }
 };
 const ZERO = () => new Decimal(0);
-const BIG_KEYS = ['ti', 'de', 'ai', 'me', 'runTi', 'yume'];
-const BIG_STATS = ['totalTi', 'bestRate', 'de', 'ai', 'me'];
-// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
-const rate = () => D(state.de).add(1).mul(D(state.me).add(1)).mul(D(state.yume).add(1));
+const BIG_KEYS = ['ti', 'de', 'ai', 'me', 'le', 'runTi', 'yume'];
+const BIG_STATS = ['totalTi', 'bestRate', 'de', 'ai', 'me', 'le'];
+// 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + le）×（1 + 夢）
+const rate = () => D(state.de).add(1).mul(D(state.me).add(1)).mul(D(state.le).add(1)).mul(D(state.yume).add(1));
 // セーブの中身を必ず正しい形にする（大きな数は Decimal、マイナスは 0、壊れた値は 0）
 function sanitize(s) {
   for (const k of BIG_KEYS) { const d = D(s[k]); s[k] = d.lt(0) ? ZERO() : d; }
@@ -123,6 +141,14 @@ function sanitize(s) {
   for (const k of BIG_STATS) { const d = D(s.st[k]); s.st[k] = d.lt(0) ? ZERO() : d; }
   s.st.play = Number.isFinite(s.st.play) && s.st.play > 0 ? s.st.play : 0;
   for (const k of ['lv', 'lv2', 'lv3', 'tut', 'sleeps']) s[k] = Number.isFinite(s[k]) ? s[k] : 0;
+  // 生成機（台数は Decimal、買った数は普通の数）
+  if (!Array.isArray(s.gens)) s.gens = newGens();
+  s.gens = GENS.map((_, i) => {
+    const g = s.gens[i] || {};
+    const n = D(g.n);
+    return { n: n.lt(0) ? ZERO() : n, b: Number.isFinite(g.b) && g.b > 0 ? Math.floor(g.b) : 0 };
+  });
+  s.room = s.room === 2 && s.room2 ? 2 : 1;
   return s;
 }
 // 眠ったときにもらえる夢
@@ -186,6 +212,7 @@ function init() {
   buildMachine(2);
   buildMachine(3);
   buildProps();
+  buildRoom2();
 
   resize();
   addEventListener('resize', resize);
@@ -494,6 +521,109 @@ function buildProps() {
   props.door = door;
 }
 
+// ===== 部屋2（黒い部屋）と生成機 =====
+const genObjs = [];
+function buildRoom2() {
+  const X = ROOM2_X, S = HALF * 2;
+  const wall = std(0x191919, { roughness: 0.95 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), std(0x222222, { roughness: 0.7 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.x = X;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(S, S), wall);
+  ceil.rotation.x = Math.PI / 2;
+  ceil.position.set(X, HEIGHT, 0);
+  scene.add(ceil);
+  for (const [x, z, ry] of [[0, -HALF, 0], [0, HALF, Math.PI], [-HALF, 0, Math.PI / 2], [HALF, 0, -Math.PI / 2]]) {
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(S, HEIGHT), wall);
+    w.position.set(X + x, HEIGHT / 2, z);
+    w.rotation.y = ry;
+    scene.add(w);
+  }
+  // 白い線（部屋1の反転）
+  const grid = new THREE.GridHelper(S, 12, 0xffffff, 0xffffff);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.06;
+  grid.position.set(X, 0.002, 0);
+  scene.add(grid);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(S - 0.01, HEIGHT - 0.01, S - 0.01)),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })
+  );
+  edges.position.set(X, HEIGHT / 2, 0);
+  scene.add(edges);
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.22), new THREE.MeshBasicMaterial({ color: ACCENT }));
+  panel.rotation.x = Math.PI / 2;
+  panel.position.set(X, HEIGHT - 0.01, 0);
+  scene.add(panel);
+  const light = new THREE.PointLight(0xffffff, 16, 0, 2);
+  light.position.set(X, HEIGHT - 0.4, 0);
+  scene.add(light);
+  const red = new THREE.PointLight(ACCENT, 6, 9, 2);
+  red.position.set(X, 1.2, -1.2);
+  scene.add(red);
+  // 床の名前
+  const lab = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: floorLabel('ROOM 02', '#f2f2f2'), transparent: true, opacity: 0.5, depthWrite: false }));
+  lab.rotation.x = -Math.PI / 2;
+  lab.position.set(X, 0.006, 3.2);
+  scene.add(lab);
+  // 帰りのドア（左の壁）
+  const door = new THREE.Group();
+  door.position.set(X - HALF + 0.03, 0, -1.8);
+  scene.add(door);
+  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(0xebebe9), 0, 1.075, 0, door);
+  for (const [h, y, z] of [[2.2, 1.1, -0.52], [2.2, 1.1, 0.52], [0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), std(ACCENT), 0.005, y, z, door);
+  // 生成機4台
+  GEN_POS.forEach((pos, i) => {
+    const g = new THREE.Group();
+    g.position.set(pos.x, 0, pos.z);
+    scene.add(g);
+    add(new THREE.CylinderGeometry(0.34, 0.4, 0.8, 32), std(0xffffff, { roughness: 0.6 }), 0, 0.4, 0, g);
+    add(new THREE.CylinderGeometry(0.36, 0.36, 0.03, 32), std(ACCENT, { emissive: ACCENT, emissiveIntensity: 0.6 }), 0, 0.815, 0, g);
+    const cubeMat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.3 });
+    const size = 0.16 + i * 0.04;
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), cubeMat);
+    cube.position.y = 1.35;
+    g.add(cube);
+    // 進化の数だけ増える赤い輪
+    const rings = [];
+    for (let k = 0; k < 4; k++) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(0.3 + k * 0.06, 0.01, 8, 64), new THREE.MeshBasicMaterial({ color: ACCENT }));
+      r.position.y = 1.35;
+      r.visible = false;
+      g.add(r);
+      rings.push(r);
+    }
+    const lm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), new THREE.MeshBasicMaterial({ map: floorLabel(`GENERATOR 0${i + 1}`, '#f2f2f2'), transparent: true, opacity: 0.55, depthWrite: false }));
+    lm.rotation.x = -Math.PI / 2;
+    lm.position.set(0, 0.006, 0.75);
+    g.add(lm);
+    genObjs.push({ cube, cubeMat, rings, pulse: 0 });
+  });
+}
+function updateRoom2(t, dt) {
+  genObjs.forEach((o, i) => {
+    const g = state.gens[i];
+    const has = g.n.gt(0);
+    o.cubeMat.color.setHex(has ? 0xffffff : 0x444444);
+    o.pulse = Math.max(0, o.pulse - dt * 2);
+    o.cubeMat.emissiveIntensity = (has ? 0.25 : 0) + o.pulse;
+    // 台数が多いほど速く回る
+    const sp = has ? 0.6 + Math.min(4, g.n.log10() * 0.4) : 0.1;
+    o.cube.rotation.x = t * sp * 0.7 + i;
+    o.cube.rotation.y = t * sp;
+    o.cube.position.y = 1.35 + Math.sin(t * 1.5 + i) * 0.05;
+    o.cube.scale.setScalar(1 + o.pulse * 0.4);
+    const evo = Math.floor(g.b / EVOLVE_EVERY);
+    o.rings.forEach((r, k) => {
+      r.visible = k < evo;
+      r.rotation.x = t * (0.5 + k * 0.3) + k;
+      r.rotation.y = t * (0.8 - k * 0.2);
+    });
+  });
+}
+
 // 進み具合に合わせて部屋を変える（毎フレーム）
 function updateRoom(t) {
   const st = state.st || {};
@@ -550,16 +680,18 @@ const EXAMS = [
     'いつの間にか、時計が増えている。',
     'こっちはすごい速さで進んでいる。',
   ] },
-  { id: 'door', name: 'ドア', x: 5.3, z: -1.8, show: () => props.door.visible, msgs: () => [
+  { id: 'door', name: 'ドア', x: 5.3, z: -1.8, show: () => props.door.visible && !state.room2, msgs: () => [
     '取っ手のないドア。',
     '押しても引いても動かない。',
     'ドアの向こうから、時計の音が聞こえる気がする。',
+    state.tut >= 6 ? `${fmt(ROOM2_COST)} ai あれば、開けられる気がする。（F）` : '鍵穴もない。',
   ] },
 ];
 const EXAM_BASE = ['clock', 'bed', 'note', 'chair', 'plant', 'frame', 'outlet'];
 const examIdx = {};
 // いちばん近くて、だいたい前にある「調べられる物」
 function nearExam() {
+  if (state.room === 2) return null;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   let best = null, bestD = 1.7;
   for (const e of EXAMS) {
@@ -608,6 +740,11 @@ const ACH = [
   { id: 'sleep5', name: 'よく眠る', desc: '5回眠る', ok: (s) => s.sleeps >= 5 },
   { id: 'look', name: '観察', desc: '部屋の物を全部調べる', ok: (s) => EXAM_BASE.every((id) => s.seen.includes(id)) },
   { id: 'hour', name: '1時間', desc: '合計 1時間 遊ぶ', ok: (s) => s.st.play >= 3600 },
+  { id: 'room2', name: '向こう側', desc: 'ドアを開けて部屋2に入る', ok: (s) => s.room2 },
+  { id: 'gen1', name: 'はじめての生成機', desc: '生成機を買う', ok: (s) => s.gens.some((g) => g.b > 0) },
+  { id: 'evo', name: '進化', desc: '生成機を進化させる', ok: (s) => s.gens.some((g) => g.b >= EVOLVE_EVERY) },
+  { id: 'gen4', name: '全部そろった', desc: '生成機4を買う', ok: (s) => s.gens[3].b > 0 },
+  { id: 'le1m', name: 'le 100万', desc: 'le を合計 100万 作る', ok: (s) => s.st.le.gte(1e6) },
 ];
 function checkAch() {
   for (const a of ACH) {
@@ -634,6 +771,8 @@ function renderStats() {
     ['作った de', fmt(st.de)],
     ['作った ai', fmt(st.ai)],
     ['作った me', fmt(st.me)],
+    ['作った le', fmt(st.le)],
+    ['生成機を買った数', fmt(state.gens.reduce((a, g) => a + g.b, 0))],
     ['眠った回数', fmt(state.sleeps)],
     ['夢', `${fmt(state.yume)}（ti ×${fmt(D(state.yume).add(1))}）`],
     ['実績', `${state.ach.length} / ${ACH.length}`],
@@ -692,6 +831,14 @@ const GUIDES = [
     h: 'me を作ってみよう',
     flow: () => chip('ti', `${fmt(ME_LV[0].cost)} ti`) + arrow + chip('me', '1 me'),
     p: () => `変換装置3の近くで ${K('<kbd>E</kbd>', '「作る」')}。me は使っても減らず、持っているだけで倍率になる。` },
+  { id: 'room', when: (s) => s.c3 && s.ai.gte(ROOM2_COST) && !s.room2,
+    h: 'ドアが開けられる',
+    flow: () => chip('ai', `${fmt(ROOM2_COST)} ai`) + arrow + chip('box', 'ドアを開ける') + arrow + chip('box', '部屋2'),
+    p: () => `右の壁のドアの前で ${K('<kbd>F</kbd>', '「開ける」')}。向こうには、変換装置とは別の「生成機」がある。` },
+  { id: 'gen', when: (s) => s.room2 && s.room === 2 && s.gens[0].b === 0,
+    h: '生成機を買ってみよう',
+    flow: () => chip('ai', `${fmt(GENS[0].base)} ai`) + arrow + chip('box', '生成機1') + arrow + chip('le', 'le / 秒'),
+    p: () => `生成機1は放っておくだけで le を作る。生成機2は生成機1を、3は2を作る。同じ生成機を ${EVOLVE_EVERY}台買うごとに進化して2倍。le は ti に ×(1 + le)。` },
   { id: 'sleep', when: (s) => s.runTi.gte(SLEEP_MIN) && (s.sleeps || 0) === 0,
     h: 'ベッドで眠れるようになった',
     flow: () => chip('ti', `この周回で ${fmt(SLEEP_MIN)} ti`) + arrow + chip('box', 'ベッドで眠る') + arrow + chip('yume', '夢'),
@@ -926,6 +1073,18 @@ function bindInput() {
     $('machine' + id).addEventListener('click', (e) => { if (e.target.id === 'machine' + id) closeMachine(); });
   }
   $('m2Auto').addEventListener('click', () => buyAuto(2));
+  // 生成機の一覧・ドアの解放
+  $('genList').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.buy !== undefined) buyGen(+b.dataset.buy, false);
+    if (b.dataset.buymax !== undefined) buyGen(+b.dataset.buymax, true);
+  });
+  $('gClose').addEventListener('click', closeMachine);
+  $('genPanel').addEventListener('click', (e) => { if (e.target.id === 'genPanel') closeMachine(); });
+  $('btnRoom').addEventListener('click', unlockRoom);
+  $('roomClose').addEventListener('click', closeMachine);
+  $('roomPanel').addEventListener('click', (e) => { if (e.target.id === 'roomPanel') closeMachine(); });
   // 眠る
   $('btnSleep').addEventListener('click', trySleep);
   $('sClose').addEventListener('click', closeMachine);
@@ -987,6 +1146,16 @@ function move(dt) {
 
 function collide() {
   const lim = HALF - PLAYER_R;
+  // 部屋2は ROOM2_X を中心にした部屋
+  if (state.room === 2) {
+    state.x = Math.max(ROOM2_X - lim, Math.min(ROOM2_X + lim, state.x));
+    state.z = Math.max(-lim, Math.min(lim, state.z));
+    for (const pos of GEN_POS) {
+      const dx = state.x - pos.x, dz = state.z - pos.z, d = Math.hypot(dx, dz), min = GEN_R + PLAYER_R;
+      if (d < min && d > 0.0001) { state.x = pos.x + (dx / d) * min; state.z = pos.z + (dz / d) * min; }
+    }
+    return;
+  }
   state.x = Math.max(-lim, Math.min(lim, state.x));
   state.z = Math.max(-lim, Math.min(lim, state.z));
 
@@ -1021,6 +1190,7 @@ function collide() {
 
 // いま近くにある装置（1 / 2 / なし=0）。装置2はチュートリアルが終わってから
 function nearMachine() {
+  if (state.room === 2) return 0;
   if (Math.hypot(state.x - MACHINE_POS[1].x, state.z - MACHINE_POS[1].z) < INTERACT_DIST) return 1;
   for (const id of [2, 3]) {
     if (machineUnlocked() && Math.hypot(state.x - MACHINE_POS[id].x, state.z - MACHINE_POS[id].z) < INTERACT_DIST) return id;
@@ -1030,6 +1200,15 @@ function nearMachine() {
 const nearConverter = () => nearMachine() === 1;
 // E（スマホは変換ボタン）：近くの装置で、いちばん基本の変換をする
 function primaryAction(all) {
+  // 部屋2：生成機を買う / ドアで部屋1へ
+  if (state.room === 2) {
+    const gi = nearGen();
+    if (gi >= 0) buyGen(gi, all);
+    else if (nearDoor()) goRoom(1);
+    return;
+  }
+  // 部屋1：解放したドアで部屋2へ
+  if (state.room2 && nearDoor()) { goRoom(2); return; }
   const n = nearMachine();
   if (n === 1) convert(all);
   else if (n === 2 && state.c2) makeAi(all);
@@ -1038,6 +1217,89 @@ function primaryAction(all) {
     const e = nearExam();
     if (e) examine(e);
   }
+}
+
+// ===== 生成機 =====
+const genMult = (i) => Math.pow(2, Math.floor(state.gens[i].b / EVOLVE_EVERY)); // 進化の倍率
+const genCost = (i) => new Decimal(GENS[i].base).mul(Decimal.pow(GENS[i].grow, state.gens[i].b));
+// 毎フレーム：生成機4 → 3 → 2 → 1 → le と作っていく
+function runGens(dt) {
+  if (!state.room2) return;
+  const g = state.gens;
+  for (let i = 0; i < GENS.length; i++) {
+    if (g[i].n.lte(0)) continue;
+    const made = g[i].n.mul(genMult(i)).mul(dt);
+    if (i === 0) {
+      state.le = D(state.le).add(made);
+      state.st.le = D(state.st.le).add(made);
+    } else {
+      g[i - 1].n = g[i - 1].n.add(made);
+    }
+  }
+}
+// 生成機を買う（all=まとめて：買えるだけ。最大 1000台）
+function buyGen(i, all) {
+  const G = GENS[i], g = state.gens[i];
+  const evoBefore = Math.floor(g.b / EVOLVE_EVERY);
+  let bought = 0;
+  for (let k = 0; k < (all ? 1000 : 1); k++) {
+    const cost = genCost(i);
+    if (D(state[G.unit]).lt(cost)) break;
+    state[G.unit] = D(state[G.unit]).sub(cost);
+    g.n = g.n.add(1);
+    g.b++;
+    bought++;
+  }
+  if (!bought) { Sound.play('no'); return; }
+  const evoAfter = Math.floor(g.b / EVOLVE_EVERY);
+  if (genObjs[i]) genObjs[i].pulse = 1;
+  if (evoAfter > evoBefore) {
+    Sound.play('up');
+    toast(`${G.name} 進化！ ×${fmt(genMult(i))}`);
+  } else {
+    Sound.play('buy');
+    toast(`${G.name} +${bought}`);
+  }
+  save();
+  if (phase === 'menu') renderMachine();
+}
+
+// ===== 部屋の行き来 =====
+function nearDoor() {
+  if (state.room === 2) return Math.hypot(state.x - DOOR2.x, state.z - DOOR2.z) < 1.6;
+  return !!(props.door && props.door.visible) && Math.hypot(state.x - DOOR1.x, state.z - DOOR1.z) < 1.6;
+}
+function nearGen() {
+  if (state.room !== 2) return -1;
+  for (let i = 0; i < GEN_POS.length; i++) {
+    if (Math.hypot(state.x - GEN_POS[i].x, state.z - GEN_POS[i].z) < 1.5) return i;
+  }
+  return -1;
+}
+function goRoom(r) {
+  const w = $('wake');
+  w.className = 'show';
+  Sound.play('look');
+  setTimeout(() => {
+    state.room = r;
+    if (r === 2) { state.x = DOOR2.x + 0.6; state.z = DOOR2.z; yaw = -Math.PI / 2; }
+    else { state.x = DOOR1.x - 0.6; state.z = DOOR1.z; yaw = Math.PI / 2; }
+    pitch = 0;
+    save();
+    if (phase === 'wake') phase = 'play';
+    w.className = '';
+  }, 350);
+}
+function unlockRoom() {
+  if (state.room2 || D(state.ai).lt(ROOM2_COST)) return;
+  if (!upArmed) { upArmed = true; renderMachine(); return; }
+  upArmed = false;
+  state.ai = D(state.ai).sub(ROOM2_COST);
+  state.room2 = true;
+  Sound.play('unlock');
+  toast('ドアが開いた');
+  save();
+  closeMachine();
 }
 
 // 持っている ti で、cost の変換が何回できるか（all=まとめて なら全部、そうでなければ 1回）。Decimal で返す
@@ -1202,11 +1464,27 @@ function upgrade() {
 
 // ===== パネルの開け閉め =====
 let openPanel = null; // 'machine'（装置1）か 'machine2'（装置2）
+function openOverlay(id) {
+  phase = 'menu';
+  upArmed = false;
+  openPanel = id;
+  for (const k in keys) keys[k] = false;
+  if (window.TDG_resetStick) window.TDG_resetStick();
+  if (document.pointerLockElement) document.exitPointerLock();
+  renderMachine();
+  $(id).classList.add('active');
+}
 function openMachine() {
-  const n = nearMachine();
   if (!machineUnlocked()) return;
-  // 装置が近くになければ、ベッドで眠る
+  // 部屋2：生成機の一覧
+  if (state.room === 2) {
+    if (nearGen() >= 0) openOverlay('genPanel');
+    return;
+  }
+  const n = nearMachine();
+  // 装置が近くになければ、ベッドで眠る / ドアを解放する
   if (!n) {
+    if (!state.room2 && nearDoor()) { openOverlay('roomPanel'); return; }
     const e = nearExam();
     if (e && e.id === 'bed') openSleep();
     return;
@@ -1221,7 +1499,7 @@ function openMachine() {
   $(openPanel).classList.add('active');
 }
 function closeMachine() {
-  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel']) $(id).classList.remove('active');
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'genPanel', 'roomPanel']) $(id).classList.remove('active');
   openPanel = null;
   phase = 'play';
   upArmed = false;
@@ -1233,6 +1511,8 @@ function renderMachine() {
   if (openPanel === 'machine2') renderGen(2);
   else if (openPanel === 'machine3') renderGen(3);
   else if (openPanel === 'sleepPanel') renderSleep();
+  else if (openPanel === 'genPanel') renderGens();
+  else if (openPanel === 'roomPanel') renderRoomPanel();
   else renderMachine1();
 }
 function lvBar(lv, max) {
@@ -1315,6 +1595,42 @@ function renderGen(id) {
   $(p + 'Res').textContent = `${fmt(has(g.unit))} ${g.unit}` + (g.unit !== 'ai' ? ` / ${fmt(has('ai'))} ai` : '');
 }
 
+// ===== 生成機の一覧パネル =====
+function renderGens() {
+  const list = $('genList');
+  if (!list.dataset.built) {
+    list.innerHTML = GENS.map((G, i) => `
+      <div class="grow-row" id="gRow${i}">
+        <div class="g-head"><span class="g-no">0${i + 1}</span><b>${G.name}</b><span class="g-evo" id="gEvo${i}"></span></div>
+        <div class="g-body">
+          <div class="g-info"><div class="g-n" id="gN${i}"></div><div class="g-sub" id="gSub${i}"></div><div class="g-bar"><i id="gBar${i}"></i></div></div>
+          <div class="mbtns"><button class="btn-solid" data-buy="${i}">買う</button><button class="btn-line" data-buymax="${i}">まとめて</button></div>
+        </div>
+      </div>`).join('');
+    list.dataset.built = '1';
+  }
+  GENS.forEach((G, i) => {
+    const g = state.gens[i], cost = genCost(i), evo = Math.floor(g.b / EVOLVE_EVERY);
+    $('gN' + i).textContent = `${fmt(g.n)} 台`;
+    $('gSub' + i).innerHTML = `1台で毎秒 ${fmt(genMult(i))} ${G.makes}　／　次の1台：<b>${fmt(cost)} ${G.unit}</b>`;
+    $('gEvo' + i).textContent = evo > 0 ? `進化 ${evo}（×${fmt(genMult(i))}）` : '';
+    $('gBar' + i).style.width = ((g.b % EVOLVE_EVERY) / EVOLVE_EVERY) * 100 + '%';
+    const can = D(state[G.unit]).gte(cost);
+    list.querySelector(`[data-buy="${i}"]`).disabled = !can;
+    list.querySelector(`[data-buymax="${i}"]`).disabled = !can;
+  });
+  $('gHave').innerHTML = `所持　<b>${fmt(state.le)}</b> le<span class="sep">/</span><b>${fmt(state.ai)}</b> ai　　le の倍率 ×${fmt(D(state.le).add(1))}`;
+}
+// ===== ドア（部屋2）の解放パネル =====
+function renderRoomPanel() {
+  const b = $('btnRoom');
+  b.disabled = D(state.ai).lt(ROOM2_COST);
+  if (b.disabled) upArmed = false;
+  b.textContent = upArmed ? '本当に？' : '開ける';
+  b.classList.toggle('armed', upArmed);
+  $('roomCost').textContent = `${fmt(ROOM2_COST)} ai（いま ${fmt(state.ai)} ai）`;
+}
+
 // ===== 眠る（転生） =====
 function openSleep() {
   phase = 'menu';
@@ -1357,7 +1673,7 @@ async function sleepAndWake() {
   await sleep(900);
   if (!alive()) return;
   // ここで時間が消える：資源と装置は 0 に、夢・自動化機・実績・統計は残る
-  Object.assign(state, { ti: ZERO(), de: ZERO(), ai: ZERO(), me: ZERO(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: ZERO() });
+  Object.assign(state, { le: ZERO(), gens: newGens().map(() => ({ n: ZERO(), b: 0 })), room: 1, ti: ZERO(), de: ZERO(), ai: ZERO(), me: ZERO(), lv: 0, c2: false, lv2: 0, c3: false, lv3: 0, runTi: ZERO() });
   state.yume = D(state.yume).add(gain);
   state.sleeps = (state.sleeps || 0) + 1;
   state.x = BED.x; state.z = BED.z - 0.75; camY = 0.85; yaw = -2.48; pitch = 1.45;
@@ -1503,6 +1819,11 @@ function updateHud() {
   $('meVal').textContent = fmt(state.me);
   $('meMult').textContent = fmt(D(state.me).add(1));
   $('hudMe').classList.toggle('show', !!state.c3 || D(state.me).gt(0));
+  $('leVal').textContent = fmt(state.le);
+  $('leMult').textContent = fmt(D(state.le).add(1));
+  $('hudLe').classList.toggle('show', !!state.room2 || D(state.le).gt(0));
+  $('hudKicker').textContent = state.room === 2 ? 'ROOM 02' : 'TIME DELETED';
+  document.body.classList.toggle('room2', state.room === 2); // 黒い部屋では HUD を白く
   $('yumeChip').style.display = D(state.yume).gt(0) ? '' : 'none';
   $('yumeChip').textContent = `夢 ×${fmt(D(state.yume).add(1))}`;
   const lvTxt = (lv, max) => (lv >= max ? 'MAX' : lv);
@@ -1512,6 +1833,44 @@ function updateHud() {
   if (phase === 'menu') renderMachine();
 
   const prompt = $('prompt');
+  // ----- 部屋2：生成機とドア -----
+  if (state.room === 2) {
+    const actEl = $('touchAct');
+    const gi = phase === 'play' ? nearGen() : -1, door = phase === 'play' && nearDoor();
+    const on = gi >= 0 || door;
+    prompt.classList.toggle('show', on);
+    actEl.classList.toggle('show', on);
+    actEl.classList.toggle('exam', gi < 0);
+    $('btnMachine').style.display = gi >= 0 ? '' : 'none';
+    $('btnMachine').textContent = '一覧';
+    if (!on) return;
+    $('btnAct').style.display = '';
+    if (gi >= 0) {
+      const G = GENS[gi], cost = genCost(gi), can = D(state[G.unit]).gte(cost);
+      prompt.classList.toggle('off', !can);
+      actEl.classList.toggle('off', !can);
+      $('btnAct').textContent = '買う';
+      const txt = `${G.name}（${fmt(state.gens[gi].n)}台）：${fmt(cost)} ${G.unit}`;
+      $('promptText').innerHTML = IS_TOUCH ? txt : `${txt}　<span class="sub"><kbd>E</kbd> 買う　<kbd>Shift</kbd>+<kbd>E</kbd> まとめて　<kbd>F</kbd> 一覧</span>`;
+    } else {
+      prompt.classList.remove('off');
+      actEl.classList.remove('off');
+      $('btnAct').textContent = '戻る';
+      $('promptText').innerHTML = IS_TOUCH ? '部屋1に戻る' : '部屋1に戻る　<span class="sub"><kbd>E</kbd></span>';
+    }
+    return;
+  }
+  // ----- 部屋1：解放したドア -----
+  if (phase === 'play' && state.room2 && nearDoor()) {
+    const actEl = $('touchAct');
+    prompt.classList.add('show'); prompt.classList.remove('off');
+    actEl.classList.add('show', 'exam'); actEl.classList.remove('off');
+    $('btnMachine').style.display = 'none';
+    $('btnAct').style.display = '';
+    $('btnAct').textContent = '入る';
+    $('promptText').innerHTML = IS_TOUCH ? '部屋2に入る' : '部屋2に入る　<span class="sub"><kbd>E</kbd></span>';
+    return;
+  }
   const near = phase === 'play' && state.tut >= 4 ? nearMachine() : 0;
   // 装置が近くになければ「調べる」
   const exam = phase === 'play' && !near && state.tut >= 1 ? nearExam() : null;
@@ -1520,15 +1879,15 @@ function updateHud() {
   const act = $('touchAct');
   act.classList.toggle('show', show);
   act.classList.toggle('exam', !near);
-  $('btnMachine').style.display = show && machineUnlocked() && (near || (exam && exam.id === 'bed')) ? '' : 'none';
-  $('btnMachine').textContent = near ? '装置' : '眠る';
+  $('btnMachine').style.display = show && machineUnlocked() && (near || (exam && (exam.id === 'bed' || exam.id === 'door'))) ? '' : 'none';
+  $('btnMachine').textContent = near ? '装置' : exam && exam.id === 'door' ? '開ける' : '眠る';
   if (!show) return;
   $('btnAct').style.display = '';
   if (exam) {
     prompt.classList.remove('off');
     act.classList.remove('off');
     $('btnAct').textContent = '調べる';
-    const sleepHint = exam.id === 'bed' && machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 眠る</span>` : '';
+    const sleepHint = exam.id === 'bed' && machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 眠る</span>` : exam.id === 'door' && machineUnlocked() ? `　<span class="sub"><kbd>F</kbd> 開ける（${fmt(ROOM2_COST)} ai）</span>` : '';
     $('promptText').innerHTML = IS_TOUCH ? `${exam.name}を調べる` : `${exam.name}を調べる　<span class="sub"><kbd>E</kbd></span>${sleepHint}`;
     return;
   }
@@ -1580,6 +1939,7 @@ function frame(now) {
   }
   state.st.play += realDt;
   runAutos(realDt);
+  runGens(realDt);
   sanitize(state); // 壊れた値を直す（表示より前に）
 
   if (phase === 'play') move(dt);
@@ -1624,6 +1984,8 @@ function frame(now) {
     }
   }
   updateRoom(t);
+  updateRoom2(t, dt);
+  scene.background.setHex(state.room === 2 ? 0x0e0e0e : 0xf3f3f2);
 
   // 調べたときのメッセージを消す
   if (msgTimer > 0) {
@@ -1686,9 +2048,10 @@ function resume() {
 function toTitle() {
   wakeToken++;
   leaving = true;
-  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'achPanel', 'statsPanel', 'help']) $(id).classList.remove('active');
+  for (const id of ['machine', 'machine2', 'machine3', 'sleepPanel', 'genPanel', 'roomPanel', 'achPanel', 'statsPanel', 'help']) $(id).classList.remove('active');
   $('msg').classList.remove('show');
   hideGuide();
+  document.body.classList.remove('room2');
   openPanel = null;
   save();
   Sound.suspend();

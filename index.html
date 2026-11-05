@@ -291,6 +291,34 @@
   #machine .btns, #machine2 .btns, #machine3 .btns { align-items: center; }
   .panel button.btn-auto.on { background: var(--ink); color: #fff; }
   .panel button.btn-auto.on::before { content: "● "; color: var(--accent); }
+  /* 生成機の一覧・ドア */
+  #genPanel .panel, #roomPanel .panel { width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; }
+  #genPanel h2, #roomPanel h2 { margin-bottom: 12px; }
+  .grow-row { padding: 12px 0; border-top: 1px solid rgba(0,0,0,0.08); }
+  .g-head { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+  .g-no { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.2em; }
+  .g-evo { margin-left: auto; font-family: var(--mono); font-size: 11px; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 9px; }
+  .g-evo:empty { display: none; }
+  .g-body { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 6px; }
+  .g-info { flex: 1; min-width: 0; }
+  .g-n { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; }
+  .g-sub { font-family: var(--mono); font-size: 11px; color: #555; margin-top: 2px; }
+  .g-sub b { color: var(--ink); font-weight: 400; }
+  .g-bar { height: 3px; background: #eee; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .g-bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  @media (max-width: 480px) { .g-body { flex-direction: column; align-items: flex-start; } }
+  .hud #hudLe { margin-top: 12px; }
+  .hud #hudLe .line { font-size: 26px; }
+  .hud #hudLe .unit { font-size: 12px; }
+  /* 部屋2（黒い部屋）では HUD を白く */
+  body.room2 .hud .line, body.room2 .hud .rate b { color: #f2f2f2; }
+  body.room2 .hud .rate, body.room2 .hud .kicker { color: #999; }
+  body.room2 .hud .kicker::before { background: #999; }
+  body.room2 .hud .mult { background: #f2f2f2; color: #141414; }
+  body.room2 .hud .lvchip { border-color: #f2f2f2; color: #f2f2f2; }
+  body.room2 .cross { background: #f2f2f2; box-shadow: 0 0 0 4px rgba(0,0,0,0.5); }
+  body.room2 .hint { color: #777; }
+
   /* 眠る */
   #sleepPanel .panel, #achPanel .panel, #statsPanel .panel { width: min(520px, 94vw); max-height: 92vh; overflow-y: auto; }
   .ptext { font-size: 13px; color: #555; line-height: 1.8; margin: -8px 0 10px; }
@@ -383,6 +411,7 @@
   .chip.ai { background: var(--accent); border-color: var(--accent); color: #fff; }
   .chip.me { border-color: var(--accent); color: var(--accent); }
   .chip.yume { background: #fff; border-style: dashed; }
+  .chip.le { background: #fff; color: var(--ink); border: 2px solid var(--ink); font-weight: 700; }
   .chip.box { border-radius: 6px; font-family: inherit; font-weight: 700; }
   .chip.plain { border-color: rgba(0,0,0,0.15); font-family: inherit; }
   .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -542,7 +571,7 @@
   <div id="stage"></div>
   <div class="ui">
     <div class="hud">
-      <div class="kicker">TIME DELETED</div>
+      <div class="kicker" id="hudKicker">TIME DELETED</div>
       <div class="res" id="hudTi">
         <div class="line"><span id="tiVal">0</span><span class="unit">ti</span></div>
         <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span></div>
@@ -552,6 +581,9 @@
       </div>
       <div class="res" id="hudMe">
         <div class="line"><span id="meVal">0</span><span class="unit">me</span><span class="mult">×<span id="meMult">1</span></span></div>
+      </div>
+      <div class="res" id="hudLe">
+        <div class="line"><span id="leVal">0</span><span class="unit">le</span><span class="mult">×<span id="leMult">1</span></span></div>
       </div>
       <div class="res" id="hudAi">
         <div class="line"><span id="aiVal">0</span><span class="unit">ai</span><span class="lvchip" id="lvChip">装置1 Lv 0</span></div>
@@ -676,6 +708,29 @@
   </div>
 </div>
 
+<!-- 生成機の一覧（部屋2） -->
+<div id="genPanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">GENERATORS</div>
+    <h2>生成機</h2>
+    <p class="ptext">生成機1は le を、2は生成機1を、3は2を、4は3を作る。同じ生成機を 10台買うごとに「進化」して、作る量が2倍になる。</p>
+    <div id="genList"></div>
+    <div class="mhave" id="gHave"></div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="gClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- ドア（部屋2）の解放 -->
+<div id="roomPanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">DOOR</div>
+    <h2>取っ手のないドア</h2>
+    <p class="ptext">ドアの向こうには、変換装置とは別のしくみ「生成機」がある黒い部屋。一度開けると、眠ってもずっと開いたまま。</p>
+    <div class="mrow"><div><div class="mt">開けるのに必要</div><div class="ms" id="roomCost"></div></div><div class="mbtns"><button id="btnRoom" class="btn-up">開ける</button></div></div>
+    <div class="btns"><span></span><button id="roomClose" class="btn-line">やめる</button></div>
+  </div>
+</div>
+
 <!-- 眠る（転生） -->
 <div id="sleepPanel" class="overlay">
   <div class="panel">
@@ -742,15 +797,15 @@
     <p class="ptext">この部屋では、時間が <span class="chip ti">ti</span> になって消えていく。ti を別のものに変えて、もっと速く時間を消していこう。</p>
 
     <div class="road">
-      <div><b>1</b>de を集める</div><div><b>2</b>ai を作る</div><div><b>3</b>装置を強化</div><div><b>4</b>装置2・3</div><div><b>5</b>眠る</div>
+      <div><b>1</b>de を集める</div><div><b>2</b>ai を作る</div><div><b>3</b>装置を強化</div><div><b>4</b>装置2・3</div><div><b>5</b>部屋2</div><div><b>6</b>眠る</div>
     </div>
 
     <section class="hsec">
       <div class="hno">01</div>
       <div class="hbody">
         <h3>毎秒の ti</h3>
-        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
-        <p>de・me・夢 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
+        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip le">le</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
+        <p>de・me・le・夢 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
       </div>
     </section>
 
@@ -812,6 +867,16 @@
 
     <section class="hsec">
       <div class="hno">08</div>
+      <div class="hbody">
+        <h3>部屋2と生成機</h3>
+        <div class="flow"><span class="chip ai">1000万 ai</span><span class="arrow">→</span><span class="chip box">ドアを開ける</span><span class="arrow">→</span><span class="chip box">部屋2</span></div>
+        <div class="flow"><span class="chip box">生成機4</span><span class="arrow">→</span><span class="chip box">生成機3</span><span class="arrow">→</span><span class="chip box">生成機2</span><span class="arrow">→</span><span class="chip box">生成機1</span><span class="arrow">→</span><span class="chip le">le</span></div>
+        <p>変換装置3を解放すると現れるドアを、ai で開けると黒い部屋に入れる。生成機は<b>放っておくだけで</b>下の段を作り続ける（生成機1は ai、2〜4は le で買う）。同じ生成機を10台買うごとに「進化」して作る量が2倍。<b>le は ti に ×(1 + le) の倍率</b>。眠ると le と生成機は 0 に戻るけど、ドアは開いたまま。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">09</div>
       <div class="hbody">
         <h3>そのほか</h3>
         <p>部屋の物（時計・ベッド・ノートなど）は近づいて <kbd>E</kbd> で調べられる。進めると部屋が少しずつ変わる。実績・統計・このページは一時停止メニューから見られる。数字の表示（K・M・B や 万・億・兆）は設定で変えられる。</p>
@@ -1045,7 +1110,7 @@
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
         // セーブの数字は文字列（"1e+320" など）なので、0 より大きいかは Decimal で比べる
         const pos = (v) => { const x = toDec(v); return !!x && x.gt(0); };
-        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '');
+        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '') + (pos(d.le) || d.room2 ? `${fmtNum(d.le)}<small>le</small>` : '');
         const lvTxt = (pos(d.yume) ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
         b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
           `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
