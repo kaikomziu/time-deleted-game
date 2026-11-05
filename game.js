@@ -99,7 +99,22 @@ const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, lv: 0, c2: false, lv2: 0, 
   yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
 // 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
-const rate = () => 1 * (1 + state.de) * (1 + (state.me || 0)) * (1 + (state.yume || 0));
+const rate = () => Math.min(NUM_CAP, 1 * (1 + (state.de || 0)) * (1 + (state.me || 0)) * (1 + (state.yume || 0)));
+
+// ===== 数字が壊れないようにする =====
+// JavaScript の数は約 1.8e308 を超えると ∞ になり、∞ − ∞ で NaN（数でない値）に壊れる。
+// そうならないよう、資源は NUM_CAP で頭打ちにし、∞ や NaN が入っていたら直す。
+const NUM_CAP = 1e300;
+const NUM_KEYS = ['ti', 'de', 'ai', 'me', 'runTi', 'yume', 'sleeps'];
+const STAT_KEYS = ['play', 'totalTi', 'bestRate', 'de', 'ai', 'me'];
+const fixNum = (v) => (v === Infinity || v > NUM_CAP ? NUM_CAP : Number.isFinite(v) && v > 0 ? v : 0);
+function sanitize(s) {
+  for (const k of NUM_KEYS) s[k] = fixNum(s[k]);
+  if (!s.st || typeof s.st !== 'object') s.st = newStats();
+  for (const k of STAT_KEYS) s.st[k] = fixNum(s.st[k]);
+  for (const k of ['lv', 'lv2', 'lv3', 'tut']) s[k] = Number.isFinite(s[k]) ? s[k] : 0;
+  return s;
+}
 // 眠ったときにもらえる夢
 const yumeGain = () => Math.floor(Math.sqrt((state.runTi || 0) / SLEEP_MIN));
 // いまの変換装置1の性能
@@ -1545,6 +1560,7 @@ function frame(now) {
   }
   state.st.play += realDt;
   runAutos(realDt);
+  sanitize(state); // ∞・NaN を直す（表示より前に）
 
   if (phase === 'play') move(dt);
   camera.position.set(state.x, camY, state.z);
@@ -1622,12 +1638,14 @@ function save() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(saveKey()));
-    if (!s || typeof s.ti !== 'number') return null;
+    // 壊れたセーブ（ti が null など）も、残っている部分は生かして直す
+    if (!s || typeof s !== 'object') return null;
     const d = { ...newState(), ...s };
     d.st = { ...newStats(), ...(s.st || {}) };
     d.ach = Array.isArray(s.ach) ? s.ach : [];
     d.seen = Array.isArray(s.seen) ? s.seen : [];
     d.guides = Array.isArray(s.guides) ? s.guides : [];
+    sanitize(d);
     return d;
   } catch { return null; }
 }

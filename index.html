@@ -818,7 +818,8 @@
     localStorage.removeItem(KEY_SAVE);
   }
   function readSlot(n) {
-    try { const d = JSON.parse(localStorage.getItem(slotKey(n))); return d && typeof d.ti === 'number' ? d : null; }
+    // 数字が壊れて null になったセーブも「空き」扱いにしない（上書きされないように）
+    try { const d = JSON.parse(localStorage.getItem(slotKey(n))); return d && typeof d === 'object' && 'ti' in d ? d : null; }
     catch { return null; }
   }
 
