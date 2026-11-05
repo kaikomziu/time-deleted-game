@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Time Deleted Game.</title>
+<style>
+  :root {
+    --ink: #141414;
+    --accent: #d23a2c;
+    --muted: #8a8a8a;
+    --mono: "Consolas", "Cascadia Mono", "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Sans", sans-serif; background: #fff; color: var(--ink); user-select: none; }
+
+  /* ===== 真っ白な部屋 ===== */
+  #room { position: fixed; inset: 0; overflow: hidden; background: #f3f3f2; }
+  .face { position: absolute; inset: 0; }
+  .back    { left: 20%; top: 18%; right: 20%; bottom: 22%; inset: 18% 20% 22% 20%; background: radial-gradient(ellipse at 50% 20%, #ffffff, #f0f0ee 85%); }
+  .ceiling { background: linear-gradient(to top, #f7f7f6, #e6e6e4); clip-path: polygon(0 0, 100% 0, 80% 18%, 20% 18%); }
+  .left    { background: linear-gradient(to right, #e4e4e2, #f5f5f4); clip-path: polygon(0 0, 20% 18%, 20% 78%, 0 100%); }
+  .right   { background: linear-gradient(to left, #e4e4e2, #f5f5f4); clip-path: polygon(100% 0, 80% 18%, 80% 78%, 100% 100%); }
+  /* 床：奥に向かう目地のライン */
+  .floor   { background:
+               linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 100%),
+               linear-gradient(to bottom, #e2e2e0, #d6d6d4);
+             clip-path: polygon(20% 78%, 80% 78%, 100% 100%, 0% 100%); }
+  /* 部屋の角の陰（壁の境目をくっきり見せる） */
+  .edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .edges line { stroke: rgba(0,0,0,0.06); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  /* 天井のライン照明 */
+  .light { position: absolute; left: 50%; top: 7%; width: 26%; height: 6px; transform: translateX(-50%); background: #fff; border-radius: 6px; box-shadow: 0 0 30px 10px rgba(255,255,255,1), 0 0 120px 40px rgba(255,255,255,0.8); }
+  /* 床に映る照明の反射 */
+  .reflect { position: absolute; left: 50%; top: 86%; width: 40%; height: 10%; transform: translateX(-50%); background: radial-gradient(ellipse, rgba(255,255,255,0.9), rgba(255,255,255,0) 70%); }
+  /* 周辺減光とフィルムグレイン */
+  .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.10) 100%); pointer-events: none; }
+  .grain { position: absolute; inset: -50%; opacity: 0.07; pointer-events: none;
+           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+           animation: grain 0.6s steps(3) infinite; }
+  @keyframes grain { 0% { transform: translate(0,0); } 33% { transform: translate(-3%,2%); } 66% { transform: translate(2%,-3%); } 100% { transform: translate(0,0); } }
+
+  /* ===== 奥の壁の時計（秒針は逆回転＝時間が消える） ===== */
+  .clock { position: absolute; left: 62%; top: 30%; width: min(18vw, 30vh); aspect-ratio: 1; transform: translateX(-50%); filter: drop-shadow(0 8px 14px rgba(0,0,0,0.08)); }
+  .clock svg { width: 100%; height: 100%; overflow: visible; }
+  .clock .hand { transform-origin: 50px 50px; }
+  .clock .sec { animation: spinBack 60s linear infinite; }
+  .clock .min { animation: spinBack 3600s linear infinite; }
+  @keyframes spinBack { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+
+  /* ===== 画面共通 ===== */
+  .screen { position: fixed; inset: 0; display: none; }
+  .screen.active { display: block; }
+
+  /* ===== 開始前メッセージ ===== */
+  #intro { background: #0b0b0b; color: #f2f2f2; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 50; cursor: pointer; }
+  #intro.active { display: flex; }
+  #intro .tag { font-family: var(--mono); font-size: 12px; letter-spacing: 0.4em; color: var(--accent); margin-bottom: 26px; opacity: 0; animation: fadeUp 1s ease forwards 0.2s; }
+  #intro p { font-size: clamp(16px, 2.3vw, 26px); font-weight: 300; line-height: 1.9; letter-spacing: 0.06em; padding: 0 24px; opacity: 0; animation: fadeUp 1.2s ease forwards 0.5s; }
+  #intro p b { font-weight: 700; }
+  #intro .rule { width: 0; height: 1px; background: #555; margin: 30px 0 22px; animation: grow 1.2s ease forwards 1.2s; }
+  #intro small { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: #777; opacity: 0; animation: fadeIn 1s ease forwards 2s, blink 2s ease-in-out infinite 3s; }
+  #intro.fadeout { animation: fadeOut 0.8s ease forwards; }
+
+  @keyframes fadeIn  { to { opacity: 1; } }
+  @keyframes fadeOut { to { opacity: 0; } }
+  @keyframes fadeUp  { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes grow    { to { width: 120px; } }
+  @keyframes blink   { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  /* ===== タイトル画面 ===== */
+  #title .head { position: absolute; left: 5vw; top: 6vh; }
+  #title .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 0.35em; color: var(--muted); display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  #title .kicker::before { content: ""; width: 34px; height: 1px; background: var(--muted); }
+  #title .logo { font-weight: 900; line-height: 0.88; letter-spacing: -0.035em; font-size: clamp(44px, 7.4vw, 110px); }
+  #title .logo span { display: block; opacity: 0; transform: translateX(-24px); }
+  #title.active .logo span { animation: slideIn 0.8s cubic-bezier(.2,.7,.2,1) forwards; }
+  #title.active .logo span:nth-child(2) { animation-delay: 0.12s; }
+  #title.active .logo span:nth-child(3) { animation-delay: 0.24s; }
+  @keyframes slideIn { to { opacity: 1; transform: none; } }
+
+  /* Deleted：赤＋取り消し線が引かれていく */
+  #title .logo .del { position: relative; color: var(--accent); width: fit-content; }
+  #title .logo .del::after { content: ""; position: absolute; left: -2%; top: 52%; height: 0.08em; width: 0; background: var(--ink); }
+  #title.active .logo .del::after { animation: strike 0.7s cubic-bezier(.7,0,.3,1) forwards 1s; }
+  @keyframes strike { to { width: 104%; } }
+  /* たまに一瞬ノイズが走る */
+  #title.active .logo .del { animation: slideIn 0.8s cubic-bezier(.2,.7,.2,1) forwards 0.12s, glitch 6s steps(1) infinite 3s; }
+  @keyframes glitch {
+    0%, 96%, 100% { text-shadow: none; transform: none; }
+    97% { text-shadow: 3px 0 #00c2ff, -3px 0 var(--accent); transform: translateX(2px) skewX(-6deg); }
+    98% { text-shadow: -2px 0 #00c2ff, 2px 0 var(--accent); transform: translateX(-2px); }
+  }
+  /* game：白抜きのアウトライン文字 */
+  #title .logo .out { color: transparent; -webkit-text-stroke: 2px var(--ink); }
+  #title .logo .out i { font-style: normal; color: var(--accent); -webkit-text-stroke: 0; }
+
+  /* メニュー */
+  .menu { position: absolute; left: 5vw; top: 58vh; display: flex; flex-direction: column; gap: 6px; }
+  .menu button { position: relative; display: flex; align-items: baseline; gap: 18px; width: 300px; padding: 12px 18px 12px 0; font-family: inherit; color: var(--ink); background: none; border: none; border-bottom: 1px solid rgba(0,0,0,0.15); cursor: pointer; text-align: left; overflow: hidden; opacity: 0; }
+  #title.active .menu button { animation: fadeUp 0.6s ease forwards; }
+  #title.active .menu button:nth-child(1) { animation-delay: 0.5s; }
+  #title.active .menu button:nth-child(2) { animation-delay: 0.6s; }
+  #title.active .menu button:nth-child(3) { animation-delay: 0.7s; }
+  .menu button::before { content: ""; position: absolute; inset: 0; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.35s cubic-bezier(.7,0,.2,1); z-index: -1; }
+  .menu button > * { position: relative; transition: color 0.25s, transform 0.35s cubic-bezier(.2,.7,.2,1); }
+  .menu .num { font-family: var(--mono); font-size: 12px; color: var(--accent); width: 22px; }
+  .menu .jp  { font-size: 21px; font-weight: 700; letter-spacing: 0.08em; }
+  .menu .en  { margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: 0.25em; color: var(--muted); }
+  .menu button:hover:not(:disabled)::before { transform: scaleX(1); }
+  .menu button:hover:not(:disabled) > * { color: #fff; transform: translateX(14px); }
+  .menu button:hover:not(:disabled) .num { color: var(--accent); }
+  .menu button { isolation: isolate; }
+  .menu button:disabled { cursor: not-allowed; }
+  .menu button:disabled > * { opacity: 0.3; }
+  /* 狭い画面ではメニュー幅を画面に合わせる */
+  @media (max-width: 480px) {
+    .menu button { width: 90vw; }
+    .menu .jp { font-size: 18px; }
+    .status { flex-direction: column; align-items: flex-start; gap: 6px; }
+  }
+
+  /* アカウントボタン（タイトル右上） */
+  .acct { position: absolute; right: 3vw; top: 5vh; display: none; align-items: center; gap: 12px; padding: 9px 18px 9px 16px; border-radius: 999px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.12); font-family: inherit; color: var(--ink); cursor: pointer; transition: background 0.2s, color 0.2s, border-color 0.2s; opacity: 0; }
+  .acct.ready { display: flex; }
+  #title.active .acct.ready { animation: fadeUp 0.6s ease forwards 0.8s; }
+  .acct .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em; color: var(--accent); }
+  .acct .name { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; }
+  .acct .sync { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
+  .acct .sync.warn { color: var(--accent); }
+  .acct:hover { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .acct:hover .sync { color: #bbb; }
+
+  /* 画面下のステータス表示 */
+  .status { position: absolute; left: 5vw; right: 3vw; bottom: 3vh; display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--muted); }
+  .status .lost b { color: var(--accent); font-weight: 400; margin-left: 10px; font-size: 13px; letter-spacing: 0.1em; }
+  .status .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 10px; animation: blink 1s steps(1) infinite; vertical-align: middle; }
+
+  /* ===== 設定パネル ===== */
+  .overlay { position: fixed; inset: 0; background: rgba(240,240,238,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none; align-items: center; justify-content: center; z-index: 20; }
+  .overlay.active { display: flex; animation: fadeIn 0.25s ease; }
+  .panel { background: rgba(255,255,255,0.92); border-radius: 18px; padding: 34px 38px 28px; width: min(420px, 90vw); box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05); animation: fadeUp 0.35s ease; }
+  .panel .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: var(--accent); margin-bottom: 6px; }
+  .panel h2 { font-size: 28px; font-weight: 900; letter-spacing: 0.04em; margin-bottom: 26px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(0,0,0,0.07); font-size: 15px; }
+  .row .val { font-family: var(--mono); font-size: 12px; color: var(--muted); width: 32px; text-align: right; }
+  .row .ctrl { display: flex; align-items: center; gap: 10px; }
+  /* スライダー */
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 150px; height: 3px; border-radius: 3px; background: linear-gradient(var(--ink), var(--ink)) 0/var(--p,50%) 100% no-repeat, #ddd; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); }
+  /* トグルスイッチ */
+  .switch { position: relative; width: 44px; height: 24px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 24px; background: #ddd; cursor: pointer; transition: background 0.2s; }
+  .switch span::before { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s; }
+  .switch input:checked + span { background: var(--ink); }
+  .switch input:checked + span::before { transform: translateX(20px); }
+  .panel .btns { display: flex; gap: 10px; justify-content: space-between; margin-top: 22px; }
+  .panel button { padding: 10px 20px; font-size: 14px; font-family: inherit; border-radius: 999px; cursor: pointer; transition: background 0.2s, color 0.2s; }
+  .btn-ghost  { background: none; border: 1px solid rgba(210,58,44,0.4); color: var(--accent); }
+  .btn-ghost:hover { background: var(--accent); color: #fff; }
+  .btn-solid  { background: var(--ink); border: 1px solid var(--ink); color: #fff; }
+  .btn-solid:hover { background: #fff; color: var(--ink); }
+
+  /* ===== プレイ画面（3D） ===== */
+  #play { background: #f3f3f2; z-index: 5; }
+  #stage, #stage canvas { position: absolute; inset: 0; display: block; }
+  #play .ui { position: absolute; inset: 0; pointer-events: none; }
+  kbd { display: inline-block; min-width: 22px; padding: 2px 7px; margin: 0 2px; border-radius: 5px; background: var(--ink); color: #fff; font-family: var(--mono); font-size: 11px; text-align: center; line-height: 1.5; }
+
+  /* 所持数の表示 */
+  .hud { position: absolute; left: 3vw; top: 4vh; }
+  .hud .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: var(--muted); display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .hud .kicker::before { content: ""; width: 28px; height: 1px; background: var(--muted); }
+  .hud .res { opacity: 0; transform: translateX(-16px); transition: opacity 0.6s, transform 0.6s cubic-bezier(.2,.7,.2,1); }
+  .hud .res.show { opacity: 1; transform: none; }
+  .hud .line { display: flex; align-items: baseline; gap: 10px; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
+  .hud .unit { font-family: var(--mono); font-weight: 400; color: var(--accent); letter-spacing: 0.1em; }
+  .hud #hudTi .line { font-size: 60px; }
+  .hud #hudTi .unit { font-size: 18px; }
+  .hud .rate { font-family: var(--mono); font-size: 12px; letter-spacing: 0.15em; color: var(--muted); margin: 8px 0 20px; padding-bottom: 14px; border-bottom: 1px solid rgba(0,0,0,0.12); width: 240px; }
+  .hud .rate b { color: var(--ink); font-weight: 400; }
+  .hud #hudDe .line { font-size: 36px; }
+  .hud #hudDe .unit { font-size: 14px; }
+  .hud .mult { margin-left: 6px; font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: 0.1em; padding: 3px 10px; border-radius: 999px; background: var(--ink); color: #fff; align-self: center; }
+
+  /* 照準 */
+  .cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 4px rgba(255,255,255,0.6); }
+
+  /* 変換装置の操作表示 */
+  #prompt { position: absolute; left: 50%; top: 58%; transform: translate(-50%, 8px); display: flex; align-items: center; gap: 12px; padding: 10px 18px 10px 10px; border-radius: 999px; background: rgba(255,255,255,0.9); box-shadow: 0 10px 30px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05); font-size: 14px; font-weight: 700; white-space: nowrap; opacity: 0; transition: opacity 0.25s, transform 0.25s; }
+  #prompt.show { opacity: 1; transform: translate(-50%, 0); }
+  #prompt .key { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-family: var(--mono); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  #prompt.off .key { background: #bbb; }
+  #prompt.off { color: var(--muted); }
+  #prompt .sub { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 6px; }
+  #prompt.shake { animation: shake 0.35s; }
+  @keyframes shake { 0%,100% { margin-left: 0; } 25% { margin-left: -8px; } 75% { margin-left: 8px; } }
+
+  /* +1 de の表示 */
+  #toasts { position: absolute; left: 50%; top: 46%; transform: translateX(-50%); }
+  .toast { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 22px; color: var(--accent); letter-spacing: 0.1em; white-space: nowrap; animation: toastUp 1.4s ease-out forwards; }
+  @keyframes toastUp { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -60px); } }
+
+  /* チュートリアルカード */
+  #tut { position: absolute; left: 50%; bottom: 5vh; width: min(520px, 90vw); transform: translate(-50%, 20px); padding: 20px 26px 18px; border-radius: 16px; background: rgba(255,255,255,0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05); opacity: 0; transition: opacity 0.5s, transform 0.5s cubic-bezier(.2,.7,.2,1); }
+  #tut.show { opacity: 1; transform: translate(-50%, 0); }
+  #tut .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.35em; color: var(--accent); margin-bottom: 6px; }
+  #tut h3 { font-size: 21px; font-weight: 900; letter-spacing: 0.03em; margin-bottom: 8px; }
+  #tut p { font-size: 13px; color: #555; line-height: 1.8; }
+  #tut .bar { height: 2px; background: #e5e5e5; margin-top: 14px; border-radius: 2px; overflow: hidden; }
+  #tut .bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.2s; }
+
+  .hint { position: absolute; right: 3vw; bottom: 3vh; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--muted); }
+
+  /* 目覚めの演出 */
+  #wake { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.6s; display: flex; align-items: center; justify-content: center; }
+  #wake.show { opacity: 1; }
+  #wake.blinking { animation: eyes 2.7s ease-in-out forwards; }
+  @keyframes eyes { 0% { opacity: 1; } 22% { opacity: 0.45; } 32% { opacity: 1; } 55% { opacity: 0.2; } 64% { opacity: 0.85; } 100% { opacity: 0; } }
+  #wakeText { color: #eee; font-size: clamp(16px, 2.2vw, 24px); font-weight: 300; letter-spacing: 0.08em; opacity: 0; transform: translateY(8px); transition: opacity 0.5s, transform 0.5s; }
+  #wakeText.on { opacity: 1; transform: none; }
+  #pause p { font-size: 13px; color: #666; line-height: 1.8; margin-top: -12px; }
+</style>
+<!-- かるわかGAMES アカウント（共通ログイン＋クラウドセーブ）。右下の標準バッジは消して、タイトルに専用ボタンを置く -->
+<script src="https://kaikomziu.github.io/game-links/js/karuwaka-account.js" data-game="time-deleted-game" data-keys="tdg_save,tdg_settings,tdg_deletedTime,tdg_introSeen" data-badge="off"></script>
+</head>
+<body>
+
+<!-- 背景：真っ白な部屋 -->
+<div id="room">
+  <div class="face ceiling"></div>
+  <div class="face left"></div>
+  <div class="face right"></div>
+  <div class="face floor"></div>
+  <div class="face back"></div>
+  <svg class="edges" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <line x1="0" y1="0" x2="20" y2="18"/><line x1="100" y1="0" x2="80" y2="18"/>
+    <line x1="0" y1="100" x2="20" y2="78"/><line x1="100" y1="100" x2="80" y2="78"/>
+    <line x1="20" y1="18" x2="80" y2="18"/><line x1="20" y1="78" x2="80" y2="78"/>
+    <line x1="20" y1="18" x2="20" y2="78"/><line x1="80" y1="18" x2="80" y2="78"/>
+  </svg>
+  <div class="clock">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="48" fill="#fff" stroke="#1a1a1a" stroke-width="1.6"/>
+      <g id="ticks"></g>
+      <line class="hand min" x1="50" y1="50" x2="50" y2="18" stroke="#1a1a1a" stroke-width="2.4" stroke-linecap="round"/>
+      <line class="hand" x1="50" y1="50" x2="68" y2="50" stroke="#1a1a1a" stroke-width="3.2" stroke-linecap="round"/>
+      <line class="hand sec" x1="50" y1="58" x2="50" y2="10" stroke="#d23a2c" stroke-width="1"/>
+      <circle cx="50" cy="50" r="2.4" fill="#d23a2c"/>
+    </svg>
+  </div>
+  <div class="light"></div>
+  <div class="reflect"></div>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+</div>
+
+<!-- 開始前メッセージ（初回のみ） -->
+<div id="intro" class="screen">
+  <div class="tag">BEFORE YOU START</div>
+  <p>このゲームは<b>Roblox</b>の<br>「時間を無駄にする」というゲームに<br>インスパイアされています！</p>
+  <div class="rule"></div>
+  <small>CLICK TO CONTINUE</small>
+</div>
+
+<!-- タイトル画面 -->
+<div id="title" class="screen">
+  <div class="head">
+    <div class="kicker">IDLE GAME — JUST LET TIME DISAPPEAR</div>
+    <div class="logo">
+      <span>Time</span>
+      <span class="del">Deleted</span>
+      <span class="out">game<i>.</i></span>
+    </div>
+  </div>
+  <button id="acct" class="acct"><span class="k">ACCOUNT</span><span class="name" id="acctName">ログイン</span><span class="sync" id="acctSync"></span></button>
+  <div class="menu">
+    <button id="btnStart"><span class="num">01</span><span class="jp">スタート</span><span class="en">START</span></button>
+    <button id="btnSettings"><span class="num">02</span><span class="jp">設定</span><span class="en">SETTINGS</span></button>
+    <button id="btnContinue"><span class="num">03</span><span class="jp">途中から</span><span class="en">CONTINUE</span></button>
+  </div>
+  <div class="status">
+    <div class="lost"><span class="dot"></span>これまでに消した時間<b id="lostTime">00:00:00</b></div>
+    <div>v0.3.0</div>
+  </div>
+</div>
+
+<!-- プレイ画面（3D） -->
+<div id="play" class="screen">
+  <div id="stage"></div>
+  <div class="ui">
+    <div class="hud">
+      <div class="kicker">TIME DELETED</div>
+      <div class="res" id="hudTi">
+        <div class="line"><span id="tiVal">0</span><span class="unit">ti</span></div>
+        <div class="rate">+ <b id="tiRate">1</b> ti / sec</div>
+      </div>
+      <div class="res" id="hudDe">
+        <div class="line"><span id="deVal">0</span><span class="unit">de</span><span class="mult">×<span id="mult">1</span></span></div>
+      </div>
+    </div>
+    <div class="cross"></div>
+    <div id="prompt"><span class="key">E</span><span id="promptText"></span></div>
+    <div id="toasts"></div>
+    <div id="tut">
+      <div class="kicker" id="tutKicker"></div>
+      <h3 id="tutTitle"></h3>
+      <p id="tutText"></p>
+      <div class="bar"><i id="tutBar"></i></div>
+    </div>
+    <div class="hint">ESC  一時停止</div>
+  </div>
+  <div id="wake"><div id="wakeText"></div></div>
+</div>
+
+<!-- 一時停止 -->
+<div id="pause" class="overlay">
+  <div class="panel">
+    <div class="kicker">PAUSED</div>
+    <h2>一時停止</h2>
+    <p>止まっている間も、時間は消え続けている。</p>
+    <div class="btns">
+      <button id="btnToTitle" class="btn-ghost">タイトルへ</button>
+      <button id="btnResume" class="btn-solid">再開</button>
+    </div>
+  </div>
+</div>
+
+<!-- 設定 -->
+<div id="settings" class="overlay">
+  <div class="panel">
+    <div class="kicker">SETTINGS</div>
+    <h2>設定</h2>
+    <div class="row"><label for="bgm">BGM音量</label><div class="ctrl"><input id="bgm" type="range" min="0" max="100"><span class="val" id="bgmVal"></span></div></div>
+    <div class="row"><label for="se">効果音音量</label><div class="ctrl"><input id="se" type="range" min="0" max="100"><span class="val" id="seVal"></span></div></div>
+    <div class="row"><label for="showIntro">起動時メッセージを再表示</label><label class="switch"><input id="showIntro" type="checkbox"><span></span></label></div>
+    <div class="btns">
+      <button id="btnDeleteSave" class="btn-ghost">セーブ削除</button>
+      <button id="btnCloseSettings" class="btn-solid">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== ストレージのキー =====
+  const KEY_INTRO = 'tdg_introSeen';
+  const KEY_SETTINGS = 'tdg_settings';
+  const KEY_SAVE = 'tdg_save';
+
+  const $ = (id) => document.getElementById(id);
+
+  // ===== 時計の目盛りを生成 =====
+  (function buildTicks() {
+    const g = $('ticks');
+    for (let i = 0; i < 60; i++) {
+      const big = i % 5 === 0;
+      const a = i * 6 * Math.PI / 180;
+      const r1 = big ? 40 : 43, r2 = 45;
+      const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l.setAttribute('x1', 50 + r1 * Math.sin(a)); l.setAttribute('y1', 50 - r1 * Math.cos(a));
+      l.setAttribute('x2', 50 + r2 * Math.sin(a)); l.setAttribute('y2', 50 - r2 * Math.cos(a));
+      l.setAttribute('stroke', '#1a1a1a'); l.setAttribute('stroke-width', big ? 1.6 : 0.5);
+      g.appendChild(l);
+    }
+  })();
+
+  // ===== 「消した時間」カウンター（放置ゲームらしく、開いていた時間を累計で保存） =====
+  const KEY_DELETED = 'tdg_deletedTime';
+  const openedAt = Date.now();
+  const deletedBefore = +localStorage.getItem(KEY_DELETED) || 0; // 前回までの累計（ミリ秒）
+  const totalDeleted = () => deletedBefore + (Date.now() - openedAt);
+  setInterval(() => localStorage.setItem(KEY_DELETED, totalDeleted()), 2000);
+  addEventListener('beforeunload', () => localStorage.setItem(KEY_DELETED, totalDeleted()));
+  setInterval(() => {
+    const s = Math.floor(totalDeleted() / 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    $('lostTime').textContent = `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+  }, 250);
+
+  // ===== 設定の読み書き =====
+  const defaultSettings = { bgm: 70, se: 70 };
+  function loadSettings() {
+    try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(KEY_SETTINGS) || '{}') }; }
+    catch { return { ...defaultSettings }; }
+  }
+  function saveSettings(s) { localStorage.setItem(KEY_SETTINGS, JSON.stringify(s)); }
+  let settings = loadSettings();
+
+  // ===== 画面切り替え =====
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    $(id).classList.add('active');
+    if (id === 'title') refreshContinue();
+  }
+
+  // セーブがない場合は「途中から」を押せないようにする
+  function refreshContinue() {
+    $('btnContinue').disabled = !localStorage.getItem(KEY_SAVE);
+  }
+
+  // ===== 開始前メッセージ（最初の1回だけ） =====
+  function closeIntro() {
+    const intro = $('intro');
+    if (intro.classList.contains('fadeout')) return;
+    intro.classList.add('fadeout');
+    localStorage.setItem(KEY_INTRO, '1');
+    setTimeout(() => { intro.classList.remove('fadeout'); show('title'); }, 800);
+  }
+  $('intro').addEventListener('click', closeIntro);
+  document.addEventListener('keydown', (e) => {
+    if ($('intro').classList.contains('active') && (e.key === 'Enter' || e.key === ' ')) closeIntro();
+  });
+
+  // ===== メニュー =====
+  // 3D 本編は game.js（three.js を読み込む）
+  function needGame() {
+    if (window.TDG) return true;
+    alert('3D の読み込みに失敗しました。インターネット接続を確認して、ページを再読み込みしてください。');
+    return false;
+  }
+  $('btnStart').addEventListener('click', () => {
+    if (!needGame()) return;
+    if (localStorage.getItem(KEY_SAVE) && !confirm('セーブデータがあります。最初から始めますか？（上書きされます）')) return;
+    TDG.start(true);
+  });
+  $('btnContinue').addEventListener('click', () => { if (needGame()) TDG.start(false); });
+  $('btnResume').addEventListener('click', () => TDG.resume());
+  $('btnToTitle').addEventListener('click', () => TDG.toTitle());
+
+  // ===== 設定パネル =====
+  // スライダーの塗り部分と数値表示を更新
+  function paintRange(el) {
+    el.style.setProperty('--p', el.value + '%');
+    $(el.id + 'Val').textContent = el.value;
+  }
+  $('btnSettings').addEventListener('click', () => {
+    $('bgm').value = settings.bgm; paintRange($('bgm'));
+    $('se').value = settings.se;   paintRange($('se'));
+    $('showIntro').checked = !localStorage.getItem(KEY_INTRO);
+    $('settings').classList.add('active');
+  });
+  $('bgm').addEventListener('input', e => { settings.bgm = +e.target.value; paintRange(e.target); saveSettings(settings); });
+  $('se').addEventListener('input', e => { settings.se = +e.target.value; paintRange(e.target); saveSettings(settings); });
+  $('showIntro').addEventListener('change', e => {
+    if (e.target.checked) localStorage.removeItem(KEY_INTRO);
+    else localStorage.setItem(KEY_INTRO, '1');
+  });
+  $('btnDeleteSave').addEventListener('click', () => {
+    if (confirm('セーブデータを削除しますか？')) { localStorage.removeItem(KEY_SAVE); refreshContinue(); }
+  });
+  $('btnCloseSettings').addEventListener('click', () => $('settings').classList.remove('active'));
+  $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').classList.remove('active'); });
+
+  // ===== かるわかGAMES アカウント =====
+  // SDK が読み込めたときだけボタンを出す（オフラインなどで失敗したら出さない）
+  function renderAccount() {
+    const K = window.KaAccount;
+    if (!K) return;
+    $('acct').classList.add('ready');
+    const u = K.user();
+    $('acctName').textContent = u ? `${u.avatar} ${u.display_name}` : 'ログイン';
+    const st = u ? K.status() : 'off';
+    const label = { syncing: '同期中…', ok: '☁ 同期済み', conflict: '⚠ 要確認', error: '☁ ×' }[st] || '';
+    $('acctSync').textContent = label;
+    $('acctSync').classList.toggle('warn', st === 'conflict' || st === 'error');
+  }
+  $('acct').addEventListener('click', () => {
+    const K = window.KaAccount;
+    if (!K) return;
+    K.isLoggedIn() ? K.openPanel() : K.login('login');
+  });
+  if (window.KaAccount) {
+    KaAccount.onChange(renderAccount);
+    renderAccount();
+    setInterval(renderAccount, 1000); // 同期状態の変化を拾う
+  }
+
+  // ===== 起動 =====
+  show(localStorage.getItem(KEY_INTRO) ? 'title' : 'intro');
+</script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
