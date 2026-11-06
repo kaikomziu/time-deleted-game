@@ -341,6 +341,22 @@
   .hud #hudMi .unit { font-size: 12px; }
   .chip.mi { background: #8a8a8a; color: #fff; border: 2px solid var(--ink); font-weight: 700; }
   .chip.mem { background: #fff; color: var(--accent); border: 2px dashed var(--accent); font-weight: 700; }
+  /* 地図（右上）：部屋の並びと今いる部屋 */
+  .map { position: absolute; right: calc(3vw + env(safe-area-inset-right)); top: calc(3vh + env(safe-area-inset-top)); opacity: 0; transition: opacity 0.6s; pointer-events: none; text-align: right; }
+  .map.show { opacity: 1; }
+  body.touch .map { top: calc(3vh + 54px + env(safe-area-inset-top)); }
+  .map-k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em; color: var(--muted); margin-bottom: 6px; }
+  .map-row { display: flex; align-items: center; justify-content: flex-end; }
+  .map-room { width: 30px; height: 22px; border-radius: 6px; border: 1.5px solid var(--ink); font-family: var(--mono); font-size: 10px; display: grid; place-items: center; background: #fff; color: var(--ink); }
+  .map-room.r2 { background: #191919; color: #f2f2f2; }
+  .map-room.r3 { background: #9e2a20; color: #fff; }
+  .map-room.r4 { background: #7a7a7a; color: #fff; }
+  .map-room.r5 { background: #fafafa; border-color: var(--accent); }
+  .map-room.unknown { background: transparent; color: var(--muted); border-style: dashed; border-color: var(--muted); }
+  .map-room.here { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); }
+  .map-line { width: 10px; height: 2px; background: var(--accent); }
+  body.room2 .map-k, body.room4 .map-k { color: #bbb; }
+  body.room2 .map-room.r1, body.room2 .map-room.r5 { border-color: #f2f2f2; }
   .hud #hudTed { margin-top: 12px; }
   .hud #hudTed .line { font-size: 26px; }
   .hud #hudTed .unit { font-size: 12px; }
@@ -654,6 +670,7 @@
     <div class="cross"></div>
     <div id="prompt"><span class="key">E</span><span id="promptText"></span></div>
     <div id="toasts"></div>
+    <div id="map" class="map"></div>
     <div id="msg"><div class="kicker" id="msgName"></div><p id="msgText"></p></div>
     <div id="guide">
       <button id="guideClose" aria-label="閉じる">✕</button>

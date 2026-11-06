@@ -63,9 +63,12 @@ const AUTO_INTERVAL = 5;
 const SLEEP_MIN = 1e9;
 // ===== 部屋2（黒い部屋）とジェネレータ =====
 // 部屋2は部屋1から遠く離れた場所（x = ROOM2_X）に作り、ドアでワープする
-const ROOM2_X = 40;
+// ===== 部屋の並び：部屋1〜5 を x 方向に並べて、横の壁の真ん中の入口と廊下でつなぐ =====
+const ROOM_GAP = 4;                         // 部屋と部屋の間の廊下の長さ
+const ROOM_STEP = HALF * 2 + ROOM_GAP;      // 部屋の中心どうしの間隔（16m）
+const DOOR_Z = 0, DOOR_W = 1.1, DOOR_H = 2.2; // 入口（横の壁の真ん中）の位置・幅・高さ
+const ROOM2_X = ROOM_STEP;
 const ROOM2_COST = 1e7;                        // 部屋2の解放にかかる ai
-const DOOR1 = { x: 5.3, z: -1.8 };             // 部屋1のドアの前
 // 生成機：1 は le を作り、2 は 1 を、3 は 2 を、4 は 3 を作る（1台あたり毎秒 1）。
 // 買うたびに値段が grow 倍。同じ生成機を EVOLVE_EVERY 台買うごとに「進化」して、作る量が2倍
 const GENS = [
@@ -76,7 +79,7 @@ const GENS = [
 ];
 const EVOLVE_EVERY = 10;
 // 生成機は部屋の中ほどに並べる（左右の壁のドア z=-1.8 と近づきすぎないように）
-const GEN_POS = [-3.6, -1.2, 1.2, 3.6].map((dx) => ({ x: ROOM2_X + dx, z: 0.8 }));
+const GEN_POS = [-3.6, -1.2, 1.2, 3.6].map((dx) => ({ x: ROOM2_X + dx, z: -1.6 })); // 通り道（z=0）の奥に1列
 const GEN_R = 0.45; // 生成機の当たり判定
 // トレイル：le で買う。1つ買うごとに、すべての倍率が2倍（毎秒の ti・変換で手に入る量・生成機が作る量）
 const TRAIL_BASE = 1000;   // 最初の値段（le）
@@ -84,23 +87,38 @@ const TRAIL_GROW = 10;     // 1つ買うごとに値段が何倍になるか
 const TRAIL_POS = { x: ROOM2_X, z: -4.3 }; // 部屋2の奥
 const TRAIL_R = 0.4;
 // ===== 部屋3（赤い部屋）・ted・エンディング =====
-const ROOM3_X = 80;
+const ROOM3_X = ROOM_STEP * 2;
 const ROOM3_COST = 1e12;                       // 部屋3の解放にかかる le
 // ===== 部屋4（灰色の部屋）・部屋5（白い部屋） =====
-const ROOM4_X = 120, ROOM5_X = 160;
+const ROOM4_X = ROOM_STEP * 3, ROOM5_X = ROOM_STEP * 4;
 const ROOM4_COST = 1e4;                        // 部屋4の解放にかかる ted（部屋3の右のドア）
 const ROOM5_COST = 1e12;                       // 部屋5の解放にかかる mi（部屋4の右のドア）
 const ROOM_X = { 1: 0, 2: ROOM2_X, 3: ROOM3_X, 4: ROOM4_X, 5: ROOM5_X };
 const ROOM_COST = { 2: { cost: ROOM2_COST, unit: 'ai' }, 3: { cost: ROOM3_COST, unit: 'le' }, 4: { cost: ROOM4_COST, unit: 'ted' }, 5: { cost: ROOM5_COST, unit: 'mi' } };
 const ROOM_LAST = 5;
-const GEAR_POS = { x: ROOM4_X, z: -1.0 };      // 歯車装置（ted で歯車を買う → mi を作る）
+// 部屋ごとの見た目（壁・床・線・天井のライン・照明・床の名前・文字の色）
+const ROOMS = {
+  1: { wall: 0xf6f6f4, floor: 0xe2e2e0, line: 0x141414, gridOp: 0.05, edgeOp: 0.12, strip: 0xffffff, light: 0, label: '', ink: '#141414', frame: 0x141414, bg: 0xf3f3f2 },
+  2: { wall: 0x191919, floor: 0x222222, line: 0xffffff, gridOp: 0.06, edgeOp: 0.25, strip: 0xd23a2c, light: 16, label: 'ROOM 02', ink: '#f2f2f2', frame: 0xd23a2c, bg: 0x0e0e0e },
+  3: { wall: 0x9e2a20, floor: 0x7a1f18, line: 0x141414, gridOp: 0.15, edgeOp: 0.4, strip: 0xffffff, light: 18, label: 'ROOM 03', ink: '#141414', frame: 0xf2f2f2, bg: 0x6e1c16 },
+  4: { wall: 0x7a7a7a, floor: 0x5f5f5f, line: 0xffffff, gridOp: 0.08, edgeOp: 0.3, strip: 0xffffff, light: 17, label: 'ROOM 04', ink: '#f2f2f2', frame: 0xf2f2f2, bg: 0x4a4a4a },
+  5: { wall: 0xf7f7f7, floor: 0xececec, line: 0x141414, gridOp: 0.05, edgeOp: 0.12, strip: 0xd23a2c, light: 20, label: 'ROOM 05', ink: '#141414', frame: 0x141414, bg: 0xfafafa },
+};
+// 入口の扉の色（行き先の部屋ごと。部屋2への扉は、現れるまでは壁と同じ色）
+const DOOR_COLOR = { 2: 0xf6f6f4, 3: 0xd23a2c, 4: 0x6a6a6a, 5: 0xffffff };
+// x 座標から今いる部屋（廊下なら 0）
+function roomAt(x) {
+  const r = Math.min(ROOM_LAST, Math.max(1, Math.round(x / ROOM_STEP) + 1));
+  return Math.abs(x - ROOM_X[r]) <= HALF ? r : 0;
+}
+const GEAR_POS = { x: ROOM4_X, z: -2.0 };      // 歯車装置（ted で歯車を買う → mi を作る）
 const GEAR_BASE = 100, GEAR_GROW = 3;          // 1個目 100 ted、1個ごとに ×3
 const GEAR_EVOLVE = 10;                        // 10個ごとに作る mi が2倍
 const REWIND_POS = { x: ROOM4_X + 3.4, z: 2.6 }; // 巻き戻し機（mi を払って、その場で時間をもらう）
 const REWIND_BASE = 1000, REWIND_GROW = 10;    // 1回目 1000 mi、1回ごとに ×10（眠ると戻る）
 const REWIND_SEC = 600;                        // 10分ぶん
 const PENDULUM = { x: ROOM4_X - 3.2, z: -HALF + 0.2 };
-const CORE_POS = { x: ROOM5_X, z: -0.5 };      // 時間の核（ted と mi を注ぐ。上限なし）
+const CORE_POS = { x: ROOM5_X, z: -1.8 };      // 時間の核（ted と mi を注ぐ。上限なし）
 const CORE_TED = 1e5, CORE_MI = 1e13, CORE_GROW = 10; // Lv0→1 の値段、1段ごとに ×10
 const ALARM = { x: -4.3, z: -2.9, r: 0.22 };   // 部屋1の目覚まし時計（目覚める）
 const AWAKE_MIN = 1e4;                         // 目覚めてから作った ted がこれ以上で目覚められる
@@ -116,7 +134,7 @@ const MEMORIES = [
   { id: 'gear10', name: '歯車の記憶', desc: '歯車が作る mi ×10', cost: 100, need: 'autogen' },
   { id: 'rooms45', name: '奥の部屋を覚えている', desc: '目覚めても、部屋4・5のドアが開いたまま', cost: 300, need: 'gear10' },
 ];
-const ERASER_POS = { x: ROOM3_X, z: -1.0 };    // 消去装置（le → ted）
+const ERASER_POS = { x: ROOM3_X, z: -2.0 };    // 消去装置（le → ted）
 const TED_COST = 1e9;                          // 1e9 le → 1 ted
 const TED_FULL = 1e6;                          // 砂時計・消去装置の見た目が最大になる ted
 const HOURGLASS = { x: ROOM3_X + 3.6, z: 3.4 };
@@ -185,7 +203,7 @@ const newGens = () => GENS.map(() => ({ n: 0, b: 0 })); // n = 持っている�
 const newState = () => ({ ti: 0, de: 0, ai: 0, me: 0, le: 0, room2: false, room3: false, ted: 0, ended: false, dreams: [], ch: null, chDone: [], room: 1, gens: newGens(), trails: 0, lv: 0, c2: false, lv2: 0, c3: false, lv3: 0,
   auto1: false, auto1On: true, auto2: false, auto2On: true,
   mi: 0, gears: 0, rewinds: 0, rewindTotal: 0, core: 0, room4: false, room5: false, mem: 0, mems: [], awakens: 0, runTed: 0,
-  yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
+  yume: 0, sleeps: 0, runTi: 0, ach: [], seen: [], guides: [], st: newStats(), tut: 0, layout: 2, x: -3.4, z: -4.4, yaw: -2.48, pitch: 0 });
 // 1 秒あたりの ti：基本 1 ti × (1 + 持っている de)
 // 毎秒の ti = 1 ×（1 + de）×（1 + me）×（1 + 夢）
 // ===== 大きな数（break_infinity.js の Decimal） =====
@@ -240,6 +258,12 @@ function sanitize(s) {
     return { n: n.lt(0) ? ZERO() : n, b: Number.isFinite(g.b) && g.b > 0 ? Math.floor(g.b) : 0 };
   });
   s.room = [2, 3, 4, 5].includes(s.room) && s['room' + s.room] ? s.room : 1;
+  // 部屋の並びを変えた（v0.12）：古いセーブの位置を、同じ部屋の同じ場所へ移す
+  if (s.layout !== 2) {
+    const OLD_X = { 1: 0, 2: 40, 3: 80, 4: 120, 5: 160 };
+    if (Number.isFinite(s.x)) s.x = s.x - OLD_X[s.room] + ROOM_X[s.room];
+    s.layout = 2;
+  }
   for (const k of ['gears', 'rewinds', 'rewindTotal', 'core', 'awakens']) s[k] = Number.isFinite(s[k]) && s[k] > 0 ? Math.floor(s[k]) : 0;
   for (const k of ['dreams', 'chDone', 'mems']) if (!Array.isArray(s[k])) s[k] = [];
   if (!CHALLENGES.some((c) => c.id === s.ch)) s.ch = null;
@@ -312,6 +336,7 @@ function init() {
   buildRoom2();
   buildRoom3();
   buildRoom45();
+  buildDoorways();
 
   resize();
   addEventListener('resize', resize);
@@ -336,49 +361,9 @@ function add(geo, mat, x, y, z, parent = scene) {
 }
 
 // ===== 真っ白な部屋 =====
+// 部屋1：箱は共通の roomShell、明かり（時間帯で変わる）だけ部屋1専用
 function buildRoom() {
-  const S = HALF * 2;
-  const wallMat = std(0xf6f6f4, { roughness: 0.95 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), std(0xe2e2e0, { roughness: 0.75 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(S, S), wallMat);
-  ceil.rotation.x = Math.PI / 2;
-  ceil.position.y = HEIGHT;
-  scene.add(ceil);
-
-  // 壁4枚（すべて内側を向く）
-  for (const [x, z, ry] of [[0, -HALF, 0], [0, HALF, Math.PI], [-HALF, 0, Math.PI / 2], [HALF, 0, -Math.PI / 2]]) {
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(S, HEIGHT), wallMat);
-    w.position.set(x, HEIGHT / 2, z);
-    w.rotation.y = ry;
-    w.receiveShadow = true;
-    scene.add(w);
-  }
-
-  // 床のタイル目地（うっすら）
-  const grid = new THREE.GridHelper(S, 12, INK, INK);
-  grid.material.transparent = true;
-  grid.material.opacity = 0.05;
-  grid.position.y = 0.002;
-  scene.add(grid);
-
-  // 部屋の角の細い線（タイトル画面と同じ雰囲気）
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(S - 0.01, HEIGHT - 0.01, S - 0.01)),
-    new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.12 })
-  );
-  edges.position.y = HEIGHT / 2;
-  scene.add(edges);
-
-  // 天井のライン照明
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.22), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-  panel.rotation.x = Math.PI / 2;
-  panel.position.y = HEIGHT - 0.01;
-  scene.add(panel);
-
+  roomShell(1);
   hemi = new THREE.HemisphereLight(0xffffff, 0xd6d6d4, 1.7);
   scene.add(hemi);
   const light = new THREE.PointLight(0xffffff, 32, 0, 2);
@@ -583,9 +568,9 @@ function buildProps() {
   add(new THREE.BoxGeometry(0.04, 0.95, 1.25), ink, -HALF + 0.02, 2.1, -1.6);
   add(new THREE.BoxGeometry(0.045, 0.83, 1.13), white, -HALF + 0.03, 2.1, -1.6);
   // コンセント（右の壁の下）
-  add(new THREE.BoxGeometry(0.02, 0.13, 0.09), white, HALF - 0.01, 0.3, 0.6);
-  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 0.58);
-  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 0.62);
+  add(new THREE.BoxGeometry(0.02, 0.13, 0.09), white, HALF - 0.01, 0.3, 2.4);
+  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 2.38);
+  add(new THREE.BoxGeometry(0.025, 0.035, 0.01), ink, HALF - 0.012, 0.3, 2.42);
 
   // 進めると現れる物 ----------------------------------------------------
   // 壁のひび（奥の壁。はじめて ai を作ると現れる）
@@ -613,68 +598,15 @@ function buildProps() {
   props.c2min = hand2(0.03, 0.32, 0.02, ink);
   props.c2sec = hand2(0.01, 0.38, 0.03, std(ACCENT));
   props.clock2 = c2;
-  // ドア（右の壁。変換装置3を解放すると現れる。取っ手がない）
-  const door = new THREE.Group();
-  door.position.set(HALF - 0.03, 0, -1.8);
-  scene.add(door);
-  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(0xebebe9), 0, 1.075, 0, door);
-  for (const [w, h, y, z] of [[0.05, 2.2, 1.1, -0.52], [0.05, 2.2, 1.1, 0.52], [0.05, 0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), ink, -0.005, y, z, door);
-  props.door = door;
 }
 
 // ===== 部屋2（黒い部屋）と生成機 =====
 const genObjs = [];
 function buildRoom2() {
-  const X = ROOM2_X, S = HALF * 2;
-  const wall = std(0x191919, { roughness: 0.95 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), std(0x222222, { roughness: 0.7 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.x = X;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(S, S), wall);
-  ceil.rotation.x = Math.PI / 2;
-  ceil.position.set(X, HEIGHT, 0);
-  scene.add(ceil);
-  for (const [x, z, ry] of [[0, -HALF, 0], [0, HALF, Math.PI], [-HALF, 0, Math.PI / 2], [HALF, 0, -Math.PI / 2]]) {
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(S, HEIGHT), wall);
-    w.position.set(X + x, HEIGHT / 2, z);
-    w.rotation.y = ry;
-    scene.add(w);
-  }
-  // 白い線（部屋1の反転）
-  const grid = new THREE.GridHelper(S, 12, 0xffffff, 0xffffff);
-  grid.material.transparent = true;
-  grid.material.opacity = 0.06;
-  grid.position.set(X, 0.002, 0);
-  scene.add(grid);
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(S - 0.01, HEIGHT - 0.01, S - 0.01)),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })
-  );
-  edges.position.set(X, HEIGHT / 2, 0);
-  scene.add(edges);
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.22), new THREE.MeshBasicMaterial({ color: ACCENT }));
-  panel.rotation.x = Math.PI / 2;
-  panel.position.set(X, HEIGHT - 0.01, 0);
-  scene.add(panel);
-  const light = new THREE.PointLight(0xffffff, 16, 0, 2);
-  light.position.set(X, HEIGHT - 0.4, 0);
-  scene.add(light);
+  roomShell(2);
   const red = new THREE.PointLight(ACCENT, 6, 9, 2);
-  red.position.set(X, 1.2, 0.8);
+  red.position.set(ROOM2_X, 1.2, -1.0);
   scene.add(red);
-  // 床の名前
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: floorLabel('ROOM 02', '#f2f2f2'), transparent: true, opacity: 0.5, depthWrite: false }));
-  lab.rotation.x = -Math.PI / 2;
-  lab.position.set(X, 0.006, 3.2);
-  scene.add(lab);
-  // 帰りのドア（左の壁）
-  const door = new THREE.Group();
-  door.position.set(X - HALF + 0.03, 0, -1.8);
-  scene.add(door);
-  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(0xebebe9), 0, 1.075, 0, door);
-  for (const [h, y, z] of [[2.2, 1.1, -0.52], [2.2, 1.1, 0.52], [0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), std(ACCENT), 0.005, y, z, door);
   // 生成機4台
   GEN_POS.forEach((pos, i) => {
     const g = new THREE.Group();
@@ -761,15 +693,9 @@ function updateRoom2(t, dt) {
 }
 
 // ===== 部屋3（赤い部屋）と消去装置、部屋2の右のドアと調べる物 =====
-let eraserObj = null, room3Door2 = null, hourSand = null;
+let eraserObj = null, hourSand = null;
 function buildRoom3() {
   const ink = std(INK, { roughness: 0.5 });
-  // --- 部屋2の右の壁のドア（部屋3へ） ---
-  room3Door2 = new THREE.Group();
-  room3Door2.position.set(ROOM2_X + HALF - 0.03, 0, -1.8);
-  scene.add(room3Door2);
-  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(ACCENT), 0, 1.075, 0, room3Door2);
-  for (const [h, y, z] of [[2.2, 1.1, -0.52], [2.2, 1.1, 0.52], [0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), std(0xf2f2f2), -0.005, y, z, room3Door2);
   // --- 部屋2の調べる物：止まった時計・黒い鏡・逆さの椅子 ---
   const c3 = new THREE.Group();
   c3.position.set(ROOM2_X - 3.2, 2.6, -HALF + 0.02);
@@ -793,46 +719,7 @@ function buildRoom3() {
   add(new THREE.BoxGeometry(0.04, 0.5, 0.45), w, -0.21, 0.72, 0, chair);
 
   // --- 部屋3（赤い部屋） ---
-  const X = ROOM3_X, S = HALF * 2;
-  const wall = std(0x9e2a20, { roughness: 0.95 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), std(0x7a1f18, { roughness: 0.75 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.x = X;
-  scene.add(floor);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(S, S), wall);
-  ceil.rotation.x = Math.PI / 2;
-  ceil.position.set(X, HEIGHT, 0);
-  scene.add(ceil);
-  for (const [x, z, ry] of [[0, -HALF, 0], [0, HALF, Math.PI], [-HALF, 0, Math.PI / 2], [HALF, 0, -Math.PI / 2]]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(S, HEIGHT), wall);
-    m.position.set(X + x, HEIGHT / 2, z);
-    m.rotation.y = ry;
-    scene.add(m);
-  }
-  const grid = new THREE.GridHelper(S, 12, INK, INK);
-  grid.material.transparent = true; grid.material.opacity = 0.15;
-  grid.position.set(X, 0.002, 0);
-  scene.add(grid);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(S - 0.01, HEIGHT - 0.01, S - 0.01)), new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.4 }));
-  edges.position.set(X, HEIGHT / 2, 0);
-  scene.add(edges);
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.22), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-  panel.rotation.x = Math.PI / 2;
-  panel.position.set(X, HEIGHT - 0.01, 0);
-  scene.add(panel);
-  const l3 = new THREE.PointLight(0xffffff, 18, 0, 2);
-  l3.position.set(X, HEIGHT - 0.4, 0);
-  scene.add(l3);
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: floorLabel('ROOM 03', '#141414'), transparent: true, opacity: 0.6, depthWrite: false }));
-  lab.rotation.x = -Math.PI / 2;
-  lab.position.set(X, 0.006, 3.2);
-  scene.add(lab);
-  // 帰りのドア（左の壁）
-  const back = new THREE.Group();
-  back.position.set(X - HALF + 0.03, 0, -1.8);
-  scene.add(back);
-  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(0x191919), 0, 1.075, 0, back);
-  for (const [h, y, z] of [[2.2, 1.1, -0.52], [2.2, 1.1, 0.52], [0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), std(0xf2f2f2), 0.005, y, z, back);
+  roomShell(3);
   // 消去装置：黒い台と、ted が増えるほど大きくなる白い球
   const e = new THREE.Group();
   e.position.set(ERASER_POS.x, 0, ERASER_POS.z);
@@ -865,7 +752,6 @@ function buildRoom3() {
   hg.add(hourSand);
 }
 function updateRoom3(t, dt) {
-  if (room3Door2) room3Door2.visible = true;
   if (!eraserObj) return;
   const k = Math.min(1, Math.max(0, D(state.ted).add(1).log10() / Math.log10(TED_FULL)));
   eraserObj.pulse = Math.max(0, eraserObj.pulse - dt * 2);
@@ -880,9 +766,9 @@ function updateRoom3(t, dt) {
 
 // ===== 部屋4（灰色の部屋）・部屋5（白い部屋）・目覚まし時計 =====
 let gearObj = null, rewindObj = null, coreObj = null, pendObj = null;
-// 部屋の箱（床・天井・壁・線・照明・床の名前）
-function roomShell(X, o) {
-  const S = HALF * 2;
+// 部屋の箱：床・天井・壁（横の壁は入口の穴つき）・床の線・角の線・天井のライン・照明・床の名前
+function roomShell(r) {
+  const o = ROOMS[r], X = ROOM_X[r], S = HALF * 2;
   const wall = std(o.wall, { roughness: 0.95 });
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), std(o.floor, { roughness: 0.75 }));
   floor.rotation.x = -Math.PI / 2;
@@ -893,12 +779,17 @@ function roomShell(X, o) {
   ceil.rotation.x = Math.PI / 2;
   ceil.position.set(X, HEIGHT, 0);
   scene.add(ceil);
-  for (const [x, z, ry] of [[0, -HALF, 0], [0, HALF, Math.PI], [-HALF, 0, Math.PI / 2], [HALF, 0, -Math.PI / 2]]) {
+  // 奥と手前の壁
+  for (const [z, ry] of [[-HALF, 0], [HALF, Math.PI]]) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(S, HEIGHT), wall);
-    m.position.set(X + x, HEIGHT / 2, z);
+    m.position.set(X, HEIGHT / 2, z);
     m.rotation.y = ry;
+    m.receiveShadow = true;
     scene.add(m);
   }
+  // 横の壁（左は前の部屋へ、右は次の部屋への入口がある）
+  sideWall(X - HALF, Math.PI / 2, wall, r > 1);
+  sideWall(X + HALF, -Math.PI / 2, wall, r < ROOM_LAST);
   const grid = new THREE.GridHelper(S, 12, o.line, o.line);
   grid.material.transparent = true; grid.material.opacity = o.gridOp;
   grid.position.set(X, 0.002, 0);
@@ -910,22 +801,86 @@ function roomShell(X, o) {
   strip.rotation.x = Math.PI / 2;
   strip.position.set(X, HEIGHT - 0.01, 0);
   scene.add(strip);
-  const l = new THREE.PointLight(0xffffff, o.light, 0, 2);
-  l.position.set(X, HEIGHT - 0.4, 0);
-  scene.add(l);
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: floorLabel(o.label, o.labelColor), transparent: true, opacity: 0.6, depthWrite: false }));
-  lab.rotation.x = -Math.PI / 2;
-  lab.position.set(X, 0.006, 3.2);
-  scene.add(lab);
+  if (o.light) {
+    // 隣の部屋まで光が届かないよう、届く距離を部屋の中に限る
+    const l = new THREE.PointLight(0xffffff, o.light, 14, 2);
+    l.position.set(X, HEIGHT - 0.4, 0);
+    scene.add(l);
+  }
+  if (o.label) {
+    const lab = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: floorLabel(o.label, o.ink), transparent: true, opacity: 0.6, depthWrite: false }));
+    lab.rotation.x = -Math.PI / 2;
+    lab.position.set(X, 0.006, 3.2);
+    scene.add(lab);
+  }
 }
-// 壁のドア（side = 1：左の壁、-1：右の壁）
-function doorAt(x, side, body, frame) {
-  const g = new THREE.Group();
-  g.position.set(x, 0, -1.8);
-  scene.add(g);
-  add(new THREE.BoxGeometry(0.04, 2.15, 1.0), std(body), 0, 1.075, 0, g);
-  for (const [h, y, z] of [[2.2, 1.1, -0.52], [2.2, 1.1, 0.52], [0.05, 2.18, 0]]) add(new THREE.BoxGeometry(0.05, h, z === 0 ? 1.09 : 0.04), std(frame), 0.005 * side, y, z, g);
-  return g;
+// 横の壁。door=true なら真ん中（DOOR_Z）に入口の穴をあける（左右の壁＋入口の上の壁の3枚）
+function sideWall(x, ry, mat, door) {
+  const piece = (w, h, y, z) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    m.receiveShadow = true;
+    scene.add(m);
+  };
+  if (!door) { piece(HALF * 2, HEIGHT, HEIGHT / 2, 0); return; }
+  const a = DOOR_Z - DOOR_W / 2, b = DOOR_Z + DOOR_W / 2;
+  piece(a + HALF, HEIGHT, HEIGHT / 2, (a - HALF) / 2);
+  piece(HALF - b, HEIGHT, HEIGHT / 2, (b + HALF) / 2);
+  piece(DOOR_W, HEIGHT - DOOR_H, (HEIGHT + DOOR_H) / 2, DOOR_Z);
+}
+// 部屋と部屋をつなぐ廊下・扉・枠・入口の上の部屋番号（to = 行き先の部屋 2〜5）
+const doorways = {};
+function buildDoorways() {
+  for (let to = 2; to <= ROOM_LAST; to++) {
+    const from = to - 1, x0 = ROOM_X[from] + HALF, x1 = ROOM_X[to] - HALF, cx = (x0 + x1) / 2, L = x1 - x0;
+    // 廊下（暗いトンネル。床の真ん中に赤い線）
+    const dark = std(0x262626, { roughness: 0.9 });
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(L, DOOR_W), std(0x1c1c1c, { roughness: 0.8 }));
+    fl.rotation.x = -Math.PI / 2;
+    fl.position.set(cx, 0, DOOR_Z);
+    scene.add(fl);
+    const ce = new THREE.Mesh(new THREE.PlaneGeometry(L, DOOR_W), dark);
+    ce.rotation.x = Math.PI / 2;
+    ce.position.set(cx, DOOR_H, DOOR_Z);
+    scene.add(ce);
+    for (const [z, ry] of [[DOOR_Z - DOOR_W / 2, 0], [DOOR_Z + DOOR_W / 2, Math.PI]]) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(L, DOOR_H), dark);
+      w.position.set(cx, DOOR_H / 2, z);
+      w.rotation.y = ry;
+      scene.add(w);
+    }
+    add(new THREE.BoxGeometry(L, 0.004, 0.05), new THREE.MeshBasicMaterial({ color: ACCENT }), cx, 0.003, DOOR_Z);
+    add(new THREE.BoxGeometry(L * 0.6, 0.01, 0.06), new THREE.MeshBasicMaterial({ color: 0xffffff }), cx, DOOR_H - 0.006, DOOR_Z);
+    // 扉（廊下側に置く。開くと上にすべって消える）。部屋2への扉だけは壁と同じ面に置いて、現れるまで壁に見せる
+    const panel = add(new THREE.BoxGeometry(0.04, DOOR_H - 0.02, DOOR_W - 0.02), std(DOOR_COLOR[to], { roughness: 0.9 }), to === 2 ? x0 - 0.02 : x0 + 0.03, DOOR_H / 2, DOOR_Z);
+    // 枠と部屋番号（両側）。部屋2への入口は、変換装置3を解放するまで出さない
+    const deco = new THREE.Group();
+    scene.add(deco);
+    for (const [wx, side, r, label] of [[x0, -1, from, `ROOM 0${to}`], [x1, 1, to, `ROOM 0${from}`]]) {
+      const fm = std(ROOMS[r].frame);
+      const fx = wx + side * 0.025;
+      add(new THREE.BoxGeometry(0.05, DOOR_H + 0.05, 0.05), fm, fx, (DOOR_H + 0.05) / 2, DOOR_Z - DOOR_W / 2 - 0.025, deco);
+      add(new THREE.BoxGeometry(0.05, DOOR_H + 0.05, 0.05), fm, fx, (DOOR_H + 0.05) / 2, DOOR_Z + DOOR_W / 2 + 0.025, deco);
+      add(new THREE.BoxGeometry(0.05, 0.05, DOOR_W + 0.1), fm, fx, DOOR_H + 0.025, DOOR_Z, deco);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.38), new THREE.MeshBasicMaterial({ map: floorLabel(label, ROOMS[r].ink), transparent: true, opacity: 0.85, depthWrite: false }));
+      sign.position.set(wx + side * 0.012, DOOR_H + 0.45, DOOR_Z);
+      sign.rotation.y = side * Math.PI / 2;
+      deco.add(sign);
+    }
+    doorways[to] = { panel, deco, open: 0 };
+  }
+  props.door = doorways[2].deco;
+}
+// 扉の開け閉め（ドアを開けると上へすべる。目覚めて閉じたら下りてくる）
+function updateDoorways(dt) {
+  for (let to = 2; to <= ROOM_LAST; to++) {
+    const d = doorways[to];
+    const target = doorOpen(to) ? 1 : 0;
+    d.open += Math.sign(target - d.open) * Math.min(Math.abs(target - d.open), dt * 1.2);
+    d.panel.position.y = DOOR_H / 2 + d.open * DOOR_H;
+    d.panel.visible = d.open < 0.999;
+  }
 }
 // 歯車（XY 平面。rotation.z で回す）
 function makeGear(r, teeth, th, mat, hubMat) {
@@ -947,14 +902,10 @@ function makeGear(r, teeth, th, mat, hubMat) {
 }
 function buildRoom45() {
   const ink = std(INK, { roughness: 0.5 }), white = std(0xf2f2f2), red = std(ACCENT, { emissive: ACCENT, emissiveIntensity: 0.4 });
-  // 部屋3の右の壁のドア（部屋4へ）
-  doorAt(ROOM3_X + HALF - 0.03, -1, 0x6a6a6a, 0xf2f2f2);
 
   // --- 部屋4（灰色の部屋） ---
   const X4 = ROOM4_X;
-  roomShell(X4, { wall: 0x7a7a7a, floor: 0x5f5f5f, line: 0xffffff, gridOp: 0.08, edgeOp: 0.3, strip: 0xffffff, light: 17, label: 'ROOM 04', labelColor: '#f2f2f2' });
-  doorAt(X4 - HALF + 0.03, 1, 0x9e2a20, 0xf2f2f2);   // 帰り（部屋3へ）
-  doorAt(X4 + HALF - 0.03, -1, 0xffffff, 0x141414);   // 次（部屋5へ）
+  roomShell(4);
   // 歯車装置：黒い台、大きな歯車、買った数だけ増える小さな歯車
   const gm = new THREE.Group();
   gm.position.set(GEAR_POS.x, 0, GEAR_POS.z);
@@ -1030,8 +981,7 @@ function buildRoom45() {
 
   // --- 部屋5（白い部屋。この部屋にだけ窓がある） ---
   const X5 = ROOM5_X;
-  roomShell(X5, { wall: 0xf7f7f7, floor: 0xececec, line: INK, gridOp: 0.05, edgeOp: 0.12, strip: ACCENT, light: 20, label: 'ROOM 05', labelColor: '#141414' });
-  doorAt(X5 - HALF + 0.03, 1, 0x6a6a6a, 0x141414);    // 帰り（部屋4へ）
+  roomShell(5);
   // 窓：まっしろに光っている
   add(new THREE.BoxGeometry(2.5, 1.7, 0.04), ink, X5, 2.1, -HALF + 0.02);
   const glow = add(new THREE.PlaneGeometry(2.36, 1.56), new THREE.MeshBasicMaterial({ color: 0xfff1d6 }), X5, 2.1, -HALF + 0.045);
@@ -1144,7 +1094,7 @@ function updateRoom(t) {
   const st = state.st || {};
   props.crack.visible = D(st.ai).gt(0) || state.c2;
   props.clock2.visible = !!state.c2;
-  props.door.visible = !!state.c3;
+  props.door.visible = !!(state.c3 || state.room2); // 記憶の木で部屋だけ残ったときも出す
   props.flower.visible = (state.sleeps || 0) > 0;
   props.c2sec.rotation.z = -(t / 6) * Math.PI * 2;
   props.c2min.rotation.z = -(t / 360) * Math.PI * 2;
@@ -1183,7 +1133,7 @@ const EXAMS = [
     '何も描かれていない額縁。',
     'じっと見ていると、少しだけ白さが違う気がする。',
   ] },
-  { id: 'outlet', name: 'コンセント', x: 5.3, z: 0.6, show: () => true, msgs: () => [
+  { id: 'outlet', name: 'コンセント', x: 5.3, z: 2.4, show: () => true, msgs: () => [
     'コンセント。何もささっていない。',
     'この部屋の装置は、どこから電気をもらっているんだろう。',
   ] },
@@ -1195,7 +1145,7 @@ const EXAMS = [
     'いつの間にか、時計が増えている。',
     'こっちはすごい速さで進んでいる。',
   ] },
-  { id: 'door', name: 'ドア', x: 5.3, z: -1.8, show: () => props.door.visible && !state.room2, msgs: () => [
+  { id: 'door', name: 'ドア', x: 5.3, z: DOOR_Z, show: () => props.door.visible && !state.room2, msgs: () => [
     '取っ手のないドア。',
     '押しても引いても動かない。',
     'ドアの向こうから、時計の音が聞こえる気がする。',
@@ -1797,59 +1747,70 @@ function move(dt) {
   if (state.tut === 1) tutMoved += SPEED * dt * len;
 }
 
-function collide() {
-  const lim = HALF - PLAYER_R;
-  // 部屋2・3は ROOM_X を中心にした部屋
-  if (state.room !== 1) {
-    const cx = ROOM_X[state.room];
-    state.x = Math.max(cx - lim, Math.min(cx + lim, state.x));
-    state.z = Math.max(-lim, Math.min(lim, state.z));
-    const circles = state.room === 2
-      ? [...GEN_POS.map((q) => ({ ...q, r: GEN_R })), { ...TRAIL_POS, r: TRAIL_R }, { ...CHAIR2, r: 0.35 }]
-      : state.room === 3 ? [{ ...ERASER_POS, r: 0.75 }, { ...HOURGLASS, r: 0.35 }]
-      : state.room === 4 ? [{ ...GEAR_POS, r: 0.8 }, { ...REWIND_POS, r: 0.4 }]
-      : [{ ...CORE_POS, r: 0.85 }];
-    for (const c of circles) {
-      const dx = state.x - c.x, dz = state.z - c.z, d = Math.hypot(dx, dz), min = c.r + PLAYER_R;
-      if (d < min && d > 0.0001) { state.x = c.x + (dx / d) * min; state.z = c.z + (dz / d) * min; }
-    }
-    return;
+// 歩ける長方形（部屋5つ ＋ 開いている入口の廊下）
+function walkRects() {
+  const R = PLAYER_R, list = [];
+  for (let r = 1; r <= ROOM_LAST; r++) {
+    const X = ROOM_X[r];
+    list.push({ x0: X - HALF + R, x1: X + HALF - R, z0: -HALF + R, z1: HALF - R });
+    if (r < ROOM_LAST && doorOpen(r + 1)) list.push({ x0: X + HALF - R - 0.05, x1: ROOM_X[r + 1] - HALF + R + 0.05, z0: DOOR_Z - DOOR_W / 2 + R, z1: DOOR_Z + DOOR_W / 2 - R });
   }
-  state.x = Math.max(-lim, Math.min(lim, state.x));
-  state.z = Math.max(-lim, Math.min(lim, state.z));
-
-  // ベッド・テーブル・椅子（箱）から押し出す
-  const r = PLAYER_R;
-  for (const b of BOXES) {
-    if (state.x > b.minX - r && state.x < b.maxX + r && state.z > b.minZ - r && state.z < b.maxZ + r) {
-      const push = [
-        [b.minX - r - state.x, 0], [b.maxX + r - state.x, 0],
-        [0, b.minZ - r - state.z], [0, b.maxZ + r - state.z],
-      ].sort((p, q) => Math.hypot(...p) - Math.hypot(...q))[0];
-      state.x += push[0];
-      state.z += push[1];
-    }
+  return list;
+}
+// いちばん近い歩ける場所へ戻す
+function clampWalk() {
+  let best = null, bestD = Infinity;
+  for (const q of walkRects()) {
+    const x = Math.max(q.x0, Math.min(q.x1, state.x)), z = Math.max(q.z0, Math.min(q.z1, state.z));
+    const d = Math.hypot(x - state.x, z - state.z);
+    if (d < bestD) { bestD = d; best = { x, z }; }
+    if (d === 0) break;
   }
-  // 植木鉢（円）
-  {
-    const dx = state.x - PLANT.x, dz = state.z - PLANT.z, d = Math.hypot(dx, dz), min = PLANT.r + r;
-    if (d < min && d > 0.0001) { state.x = PLANT.x + (dx / d) * min; state.z = PLANT.z + (dz / d) * min; }
-  }
-  // 目覚まし時計（台）
-  if (props.alarm && props.alarm.visible) {
-    const dx = state.x - ALARM.x, dz = state.z - ALARM.z, d = Math.hypot(dx, dz), min = ALARM.r + r;
-    if (d < min && d > 0.0001) { state.x = ALARM.x + (dx / d) * min; state.z = ALARM.z + (dz / d) * min; }
-  }
-
-  // 変換装置（円柱）から押し出す
-  for (const m of Object.values(machines)) {
-    const dx = state.x - m.x, dz = state.z - m.z;
-    const d = Math.hypot(dx, dz), min = CONVERTER_R + PLAYER_R;
+  if (best) { state.x = best.x; state.z = best.z; }
+}
+// 円の形の物から押し出す
+function pushCircles(list) {
+  for (const c of list) {
+    const dx = state.x - c.x, dz = state.z - c.z, d = Math.hypot(dx, dz), min = c.r + PLAYER_R;
     if (d < min) {
-      state.x = d > 0.0001 ? m.x + (dx / d) * min : m.x + min;
-      state.z = d > 0.0001 ? m.z + (dz / d) * min : m.z;
+      state.x = d > 0.0001 ? c.x + (dx / d) * min : c.x + min;
+      state.z = d > 0.0001 ? c.z + (dz / d) * min : c.z;
     }
   }
+}
+// 部屋ごとの、ぶつかる円
+function roomCircles(r) {
+  if (r === 1) {
+    const list = [PLANT, ...Object.values(machines).map((m) => ({ x: m.x, z: m.z, r: CONVERTER_R }))];
+    if (props.alarm && props.alarm.visible) list.push(ALARM);
+    return list;
+  }
+  if (r === 2) return [...GEN_POS.map((q) => ({ ...q, r: GEN_R })), { ...TRAIL_POS, r: TRAIL_R }, { ...CHAIR2, r: 0.35 }];
+  if (r === 3) return [{ ...ERASER_POS, r: 0.75 }, { ...HOURGLASS, r: 0.35 }];
+  if (r === 4) return [{ ...GEAR_POS, r: 0.8 }, { ...REWIND_POS, r: 0.4 }];
+  return [{ ...CORE_POS, r: 0.85 }];
+}
+function collide() {
+  const r = roomAt(state.x);
+  if (r === 1) {
+    // ベッド・テーブル・椅子（箱）から押し出す
+    const R = PLAYER_R;
+    for (const b of BOXES) {
+      if (state.x > b.minX - R && state.x < b.maxX + R && state.z > b.minZ - R && state.z < b.maxZ + R) {
+        const push = [
+          [b.minX - R - state.x, 0], [b.maxX + R - state.x, 0],
+          [0, b.minZ - R - state.z], [0, b.maxZ + R - state.z],
+        ].sort((p, q) => Math.hypot(...p) - Math.hypot(...q))[0];
+        state.x += push[0];
+        state.z += push[1];
+      }
+    }
+  }
+  if (r) pushCircles(roomCircles(r));
+  clampWalk();
+  // 入口を通って別の部屋に入ったら、今いる部屋を切り替える（廊下の中は前の部屋のまま）
+  const now = roomAt(state.x);
+  if (now && now !== state.room) { state.room = now; save(); }
 }
 
 // いま近くにある装置（1 / 2 / なし=0）。装置2はチュートリアルが終わってから
@@ -1873,14 +1834,10 @@ function primaryAction(all) {
     if (nearGear()) { buyGear(all); return; }
     if (nearRewind()) { doRewind(); return; }
     if (nearCore()) { feedCore(); return; }
-    const to = doorHere();
-    if (to) { if (doorOpen(to)) goRoom(to); return; }
     const e = nearExam();
     if (e) examine(e);
     return;
   }
-  // 部屋1：解放したドアで部屋2へ
-  if (state.room2 && doorHere() === 2) { goRoom(2); return; }
   const n = nearMachine();
   if (n === 1) convert(all);
   else if (n === 2 && state.c2) makeAi(all);
@@ -2246,18 +2203,14 @@ function offlineReward() {
 }
 
 // ===== 部屋の行き来 =====
-// 近くのドアの行き先（なければ 0）
+// 近くの「まだ開いていない入口」の行き先（なければ 0）。開いた入口は歩いて通れる
 function doorHere() {
-  const near = (d) => Math.hypot(state.x - d.x, state.z - d.z) < 1.6;
-  const r = state.room, X = ROOM_X[r];
-  if (r === 1) return props.door && props.door.visible && near(DOOR1) ? 2 : 0;
-  // 部屋2〜5：左の壁のドアは1つ前の部屋へ、右の壁のドアは次の部屋へ
-  if (near({ x: X - 5.3, z: -1.8 })) return r - 1;
-  if (r < ROOM_LAST && near({ x: X + 5.3, z: -1.8 })) return r + 1;
-  return 0;
+  const r = state.room, to = r + 1;
+  if (r >= ROOM_LAST || doorOpen(to)) return 0;
+  if (r === 1 && !(props.door && props.door.visible)) return 0;
+  return Math.hypot(state.x - (ROOM_X[r] + HALF - 0.7), state.z - DOOR_Z) < 1.6 ? to : 0;
 }
 const doorOpen = (to) => to === 1 || !!state['room' + to];
-const nearDoor = () => doorHere() > 0;
 const nearEraser = () => state.room === 3 && Math.hypot(state.x - ERASER_POS.x, state.z - ERASER_POS.z) < 1.8;
 function nearGen() {
   if (state.room !== 2) return -1;
@@ -2265,25 +2218,6 @@ function nearGen() {
     if (Math.hypot(state.x - GEN_POS[i].x, state.z - GEN_POS[i].z) < 1.5) return i;
   }
   return -1;
-}
-function goRoom(r) {
-  const w = $('wake');
-  w.className = 'show';
-  Sound.play('look');
-  setTimeout(() => {
-    const from = state.room;
-    state.room = r;
-    // 奥の部屋へ行くときは行き先の左のドアから、戻るときは右のドアから出てくる
-    if (r > from) {
-      state.x = ROOM_X[r] - 5.3 + 0.6; state.z = -1.8; yaw = -Math.PI / 2;
-    } else {
-      state.x = ROOM_X[r] + 5.3 - 0.6; state.z = -1.8; yaw = Math.PI / 2;
-    }
-    pitch = 0;
-    save();
-    if (phase === 'wake') phase = 'play';
-    w.className = '';
-  }, 350);
 }
 let roomTarget = 2;
 const ROOM_INFO = {
@@ -2962,17 +2896,6 @@ function updateHud() {
     }
     return;
   }
-  // ----- 部屋1：解放したドア -----
-  if (phase === 'play' && state.room2 && doorHere() === 2) {
-    const actEl = $('touchAct');
-    prompt.classList.add('show'); prompt.classList.remove('off');
-    actEl.classList.add('show', 'exam'); actEl.classList.remove('off');
-    $('btnMachine').style.display = 'none';
-    $('btnAct').style.display = '';
-    $('btnAct').textContent = '入る';
-    $('promptText').innerHTML = IS_TOUCH ? '部屋2に入る' : '部屋2に入る　<span class="sub"><kbd>E</kbd></span>';
-    return;
-  }
   const near = phase === 'play' && state.tut >= 4 ? nearMachine() : 0;
   // 装置が近くになければ「調べる」
   const exam = phase === 'play' && !near && state.tut >= 1 ? nearExam() : null;
@@ -3018,6 +2941,27 @@ function updateHud() {
   $('promptText').innerHTML = (can
     ? `${rateTxt}　<span class="sub"><kbd>E</kbd> 1回　<kbd>Shift</kbd>+<kbd>E</kbd> まとめて</span>`
     : `あと ${need()} ti 必要`) + panelHint;
+}
+
+// ===== 地図（右上。部屋の並びと今いる部屋） =====
+let mapKey = '';
+function updateMap() {
+  // 見えている部屋：開けた部屋と、その次の1つ（「?」）。部屋2は入口が現れてから
+  const known = (r) => r === 1 || state['room' + r];
+  const shown = [1];
+  for (let r = 2; r <= ROOM_LAST; r++) {
+    if (known(r)) { shown.push(r); continue; }
+    if (known(r - 1) && (r > 2 || (props.door && props.door.visible))) shown.push(r);
+    break;
+  }
+  const key = state.room + ':' + shown.map((r) => (known(r) ? r : '?')).join(',') + ':' + (state.tut >= 6);
+  if (key === mapKey) return;
+  mapKey = key;
+  const el = $('map');
+  el.classList.toggle('show', state.tut >= 6 && shown.length > 1);
+  el.innerHTML = '<div class="map-k">MAP</div><div class="map-row">' + shown.map((r, i) =>
+    (i ? '<i class="map-line"></i>' : '') +
+    `<span class="map-room r${r} ${known(r) ? '' : 'unknown'} ${r === state.room ? 'here' : ''}">${known(r) ? '0' + r : '?'}</span>`).join('') + '</div>';
 }
 
 // ===== メインループ =====
@@ -3092,9 +3036,11 @@ function frame(now) {
   updateRoom2(t, dt);
   updateRoom3(t, dt);
   updateRoom45(t, dt);
+  updateDoorways(dt);
+  updateMap();
   updateDaylight(dt);
   updateEvent(realDt);
-  scene.background.setHex(state.room === 2 ? 0x0e0e0e : state.room === 3 ? 0x6e1c16 : state.room === 4 ? 0x4a4a4a : state.room === 5 ? 0xfafafa : 0xf3f3f2);
+  scene.background.setHex(ROOMS[state.room].bg);
 
   // 調べたときのメッセージを消す
   if (msgTimer > 0) {
@@ -3138,6 +3084,7 @@ function load() {
     if (!s || typeof s !== 'object') return null;
     const d = { ...newState(), ...s };
     d.st = { ...newStats(), ...(s.st || {}) };
+    d.layout = s.layout || 1; // 古い部屋の並びのセーブ（sanitize で位置を直す）
     d.ach = Array.isArray(s.ach) ? s.ach.filter((id) => ACH.some((a) => a.id === id)) : [];
     d.seen = Array.isArray(s.seen) ? s.seen : [];
     d.guides = Array.isArray(s.guides) ? s.guides : [];
@@ -3168,6 +3115,7 @@ function toTitle() {
   $('msg').classList.remove('show');
   hideGuide();
   document.body.classList.remove('room2', 'room3', 'room4');
+  mapKey = '';
   openPanel = null;
   save();
   Sound.suspend();
@@ -3189,6 +3137,9 @@ window.TDG = {
     if (window.TDG_resetStick) window.TDG_resetStick();
     state = sanitize(isNew ? newState() : load() || newState());
     yaw = state.yaw; pitch = state.pitch || 0; camY = EYE;
+    // 入口の扉は、読み込んだときは動かさずに今の状態にしておく
+    for (let to = 2; to <= ROOM_LAST; to++) doorways[to].open = doorOpen(to) ? 1 : 0;
+    mapKey = '';
     tutMoved = tutLooked = tutTimer = tutDoneWait = 0;
     leaving = false;
     show('play');
@@ -3216,5 +3167,6 @@ window.TDG = {
     get yaw() { return yaw; },
     get pitch() { return pitch; },
     tick(ms) { cancelAnimationFrame(rafId); frame(lastT + ms); },
+    look(y, p = 0) { yaw = y; pitch = p; },
   },
 };
