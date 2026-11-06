@@ -328,6 +328,19 @@
   body.room3 .hud .lvchip { border-color: #fff; color: #fff; }
   body.room3 .cross { background: #fff; }
   body.room3 .hint { color: #f3c9c4; }
+  /* 部屋4（灰色の部屋）でも HUD を白く */
+  body.room4 .hud .line, body.room4 .hud .rate b { color: #fff; }
+  body.room4 .hud .rate, body.room4 .hud .kicker { color: #d6d6d6; }
+  body.room4 .hud .kicker::before { background: #d6d6d6; }
+  body.room4 .hud .mult { background: #fff; color: #141414; }
+  body.room4 .hud .lvchip { border-color: #fff; color: #fff; }
+  body.room4 .cross { background: #fff; }
+  body.room4 .hint { color: #d6d6d6; }
+  .hud #hudMi { margin-top: 12px; }
+  .hud #hudMi .line { font-size: 26px; }
+  .hud #hudMi .unit { font-size: 12px; }
+  .chip.mi { background: #8a8a8a; color: #fff; border: 2px solid var(--ink); font-weight: 700; }
+  .chip.mem { background: #fff; color: var(--accent); border: 2px dashed var(--accent); font-weight: 700; }
   .hud #hudTed { margin-top: 12px; }
   .hud #hudTed .line { font-size: 26px; }
   .hud #hudTed .unit { font-size: 12px; }
@@ -336,8 +349,8 @@
   #stage.stopped canvas { filter: grayscale(0.9) contrast(1.1); transition: filter 0.4s; }
   #stage canvas { transition: filter 0.6s; }
   /* 夢の木・チャレンジ */
-  #dreamPanel .panel, #eraserPanel .panel, #offlinePanel .panel { width: min(600px, 94vw); max-height: 92vh; overflow-y: auto; }
-  #dreamPanel h2, #eraserPanel h2, #offlinePanel h2 { margin-bottom: 12px; }
+  #dreamPanel .panel, #eraserPanel .panel, #offlinePanel .panel, #gearPanel .panel, #corePanel .panel, #awakePanel .panel { width: min(600px, 94vw); max-height: 92vh; overflow-y: auto; }
+  #dreamPanel h2, #eraserPanel h2, #offlinePanel h2, #gearPanel h2, #corePanel h2, #awakePanel h2 { margin-bottom: 12px; }
   .dream-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   @media (max-width: 520px) { .dream-grid { grid-template-columns: 1fr; } }
   .dream { padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.12); display: flex; flex-direction: column; gap: 6px; }
@@ -616,7 +629,7 @@
       <div class="kicker" id="hudKicker">TIME DELETED</div>
       <div class="res" id="hudTi">
         <div class="line"><span id="tiVal">0</span><span class="unit">ti</span></div>
-        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span> <span class="yume" id="trailChip" style="display:none"></span> <span class="yume" id="eventChip" style="display:none"></span></div>
+        <div class="rate">+ <b id="tiRate">1</b> ti / sec <span class="yume" id="yumeChip" style="display:none"></span> <span class="yume" id="trailChip" style="display:none"></span> <span class="yume" id="eventChip" style="display:none"></span> <span class="yume" id="memChip" style="display:none"></span> <span class="yume" id="coreChip" style="display:none"></span></div>
         <div class="chchip" id="chChip" style="display:none"></div>
       </div>
       <div class="res" id="hudDe">
@@ -627,6 +640,9 @@
       </div>
       <div class="res" id="hudTed">
         <div class="line"><span id="tedVal">0</span><span class="unit">ted</span><span class="mult">×<span id="tedMult">1</span></span></div>
+      </div>
+      <div class="res" id="hudMi">
+        <div class="line"><span id="miVal">0</span><span class="unit">mi</span><span class="mult">×<span id="miMult">1</span></span></div>
       </div>
       <div class="res" id="hudLe">
         <div class="line"><span id="leVal">0</span><span class="unit">le</span><span class="mult">×<span id="leMult">1</span></span></div>
@@ -789,7 +805,7 @@
   <div class="panel">
     <div class="kicker">ERASER</div>
     <h2>消去装置</h2>
-    <p class="ptext">le を ted に変える。ted は「すべて」に ×(1 + ted) の倍率。ted が貯まりきると、時間がすべて消える。</p>
+    <p class="ptext">le を ted に変える。ted は「すべて」に ×(1 + ted) の倍率。ted が貯まると、右の壁の灰色のドアが開けられる。</p>
     <div class="mrow"><div style="flex:1"><div class="mt" id="eTed"></div><div class="g-bar" style="height:6px"><i id="eBar"></i></div><div class="ms" id="eMult" style="margin-top:6px"></div></div></div>
     <div class="mrow"><div><div class="mt">le を ted に変える</div><div class="ms" id="eLe"></div></div><div class="mbtns"><button id="eOne" class="btn-solid">変える</button><button id="eAll" class="btn-line">まとめて</button></div></div>
     <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="eClose" class="btn-solid">閉じる</button></div>
@@ -810,6 +826,53 @@
     <div class="chnow" id="chNow"></div>
     <div id="chList" class="dream-grid"></div>
     <div class="btns"><span></span><button id="dClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 歯車装置・巻き戻し機（部屋4） -->
+<div id="gearPanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">GEARS</div>
+    <h2>歯車と巻き戻し</h2>
+    <p class="ptext">ted で歯車を買うと、毎秒 mi が作られる。<b>mi は生成機が作る量に ×(1 + mi)</b>。歯車は10個ごとに作る量が2倍。mi を払って巻き戻すと、その場で10分ぶんの時間がもらえる。</p>
+    <div class="grow-row trail-row">
+      <div class="g-head"><span class="g-no">GR</span><b>歯車</b></div>
+      <div class="g-body">
+        <div class="g-info"><div class="g-n" id="rgN"></div><div class="g-sub" id="rgSub"></div><div class="g-bar"><i id="rgBar"></i></div></div>
+        <div class="mbtns"><button class="btn-up" id="rgBuy">買う</button><button class="btn-line" id="rgBuyMax">まとめて</button></div>
+      </div>
+    </div>
+    <div class="mrow"><div><div class="mt">巻き戻す</div><div class="ms" id="rwN"></div><div class="ms" id="rwSub"></div></div><div class="mbtns"><button id="rwBtn" class="btn-solid">巻き戻す</button></div></div>
+    <div class="mhave" id="rgHave"></div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="rgClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 時間の核（部屋5） -->
+<div id="corePanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">CORE</div>
+    <h2>時間の核</h2>
+    <p class="ptext">ted と mi を注ぐと、1段ごとに<b>すべてが2倍</b>。上限はない。段が上がるほど、目覚めたときにもらえる記憶も増える。</p>
+    <div class="mrow"><div><div class="mt" id="coLv"></div><div class="ms" id="coSub"></div></div><div class="mbtns"><button id="coBtn" class="btn-up">注ぐ</button></div></div>
+    <div class="mhave" id="coHave"></div>
+    <div class="btns"><span class="hintk pc-only">F / ESC で閉じる</span><span class="touch-only"></span><button id="coClose" class="btn-solid">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 目覚める・記憶の木 -->
+<div id="awakePanel" class="overlay">
+  <div class="panel">
+    <div class="kicker">WAKE UP</div>
+    <h2>目覚める</h2>
+    <p class="ptext">眠るよりも深いやり直し。<b>夢・夢の木・ted・歯車・mi・時間の核・部屋2〜5のドアまで全部消える</b>かわりに「記憶」が残る。記憶は「すべて」に ×(1 + 記憶)。自動化機・チャレンジのごほうび・実績・統計は残る。</p>
+    <div class="mrow"><div><div class="mt">もらえる記憶</div><div class="ms" id="awMult"></div><div class="ms" id="awRun"></div></div><div style="text-align:right"><div class="big" id="awGain">0</div><button id="awBtn" class="btn-up" style="margin-top:8px">目覚める</button></div></div>
+    <div class="kicker" style="margin-top:22px">MEMORIES</div>
+    <h2 style="font-size:22px">記憶の木</h2>
+    <p class="ptext">記憶を払って、目覚めてもずっと残る強化を取る。<b>記憶を使うと、記憶の倍率もそのぶん下がる</b>。</p>
+    <div class="mhave" id="awMem" style="border-top:none;padding-top:0;margin-bottom:8px"></div>
+    <div id="memList" class="dream-grid"></div>
+    <div class="btns"><span></span><button id="awClose" class="btn-solid">閉じる</button></div>
   </div>
 </div>
 
@@ -899,8 +962,8 @@
       <div class="hno">01</div>
       <div class="hbody">
         <h3>毎秒の ti</h3>
-        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip le">le</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip ted">ted</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span></div>
-        <p>de・me・le・夢 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
+        <div class="flow"><span class="chip ti">ti / 秒</span><span class="op">=</span><span class="num1">1</span><span class="op">×</span><span class="paren">( 1 + <span class="chip de">de</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip me">me</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip le">le</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip ted">ted</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip yume">夢</span> )</span><span class="op">×</span><span class="paren">( 1 + <span class="chip mem">記憶</span> )</span></div>
+        <p>de・me・le・ted・夢・記憶 を<b>持っているだけ</b>で、ti が速く貯まる。持っている数がそのまま倍率になる。ゲームを開いている間は、一時停止中でも貯まり続ける。</p>
       </div>
     </section>
 
@@ -975,12 +1038,31 @@
       <div class="hbody">
         <h3>部屋3・ted・夢の木・チャレンジ</h3>
         <div class="flow"><span class="chip le">1兆 le</span><span class="arrow">→</span><span class="chip box">部屋3</span><span class="sep2">：</span><span class="chip le">10億 le</span><span class="arrow">→</span><span class="chip ted">1 ted</span></div>
-        <p>部屋2の右の赤いドアを le で開けると、赤い部屋の<b>消去装置</b>で le を ted に変えられる。<b>ted は「すべて」に ×(1 + ted)</b>。ted が 100万 貯まると、時間がすべて消える（エンディング）。眠ったあとは、ベッドのパネルや一時停止の「<b>夢の木</b>」で夢を払ってずっと残る強化を取れる（夢を使うと倍率も下がる）。同じ画面の<b>チャレンジ</b>は、条件つきで1周遊んで目標まで ti を消すと、ずっと残るごほうびがもらえる。</p>
+        <p>部屋2の右の赤いドアを le で開けると、赤い部屋の<b>消去装置</b>で le を ted に変えられる。<b>ted は「すべて」に ×(1 + ted)</b>。ted が 1万 貯まると、右の灰色のドアが開けられる。眠ったあとは、ベッドのパネルや一時停止の「<b>夢の木</b>」で夢を払ってずっと残る強化を取れる（夢を使うと倍率も下がる）。同じ画面の<b>チャレンジ</b>は、条件つきで1周遊んで目標まで ti を消すと、ずっと残るごほうびがもらえる。</p>
       </div>
     </section>
 
     <section class="hsec">
       <div class="hno">10</div>
+      <div class="hbody">
+        <h3>部屋4・部屋5</h3>
+        <div class="flow"><span class="chip ted">1万 ted</span><span class="arrow">→</span><span class="chip box">部屋4</span><span class="sep2">：</span><span class="chip ted">ted</span><span class="arrow">→</span><span class="chip box">歯車</span><span class="arrow">→</span><span class="chip mi">mi / 秒</span></div>
+        <div class="flow"><span class="chip mi">1兆 mi</span><span class="arrow">→</span><span class="chip box">部屋5</span><span class="sep2">：</span><span class="chip ted">ted</span><span class="sep2">＋</span><span class="chip mi">mi</span><span class="arrow">→</span><span class="chip box">時間の核</span><span class="arrow">→</span><span class="chip plain">すべて ×2</span></div>
+        <p>部屋3の右の灰色のドアを ted で開けると、<b>歯車</b>がある部屋4。歯車は毎秒 mi を作り、<b>mi は生成機が作る量に ×(1 + mi)</b>（10個ごとに2倍）。手前右の<b>巻き戻し機</b>は、mi を払うとその場で10分ぶんの時間がもらえる（使うたびに値段は10倍、眠ると戻る）。部屋4の右の白いドアを mi で開けると、いちばん奥の部屋5。<b>時間の核</b>に ted と mi を注ぐと、1段ごとに「すべて」が2倍。<b>上限はない</b>。ted・歯車・mi・時間の核は眠っても残る。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">11</div>
+      <div class="hbody">
+        <h3>目覚める・記憶の木</h3>
+        <div class="flow"><span class="chip ted">目覚めてから 1万 ted</span><span class="arrow">→</span><span class="chip box">目覚まし時計</span><span class="arrow">→</span><span class="chip mem">記憶</span></div>
+        <p>部屋3を開けると、部屋1のベッドのそばに<b>目覚まし時計</b>が現れる。<kbd>F</kbd> で「目覚める」と、眠るよりも深く全部やり直し：夢・夢の木・ted・歯車・mi・時間の核・部屋2〜5のドアまで消える。かわりに<b>記憶</b>がもらえて、<b>記憶は「すべて」に ×(1 + 記憶)</b>。もらえる記憶は √(目覚めてから作った ted ÷ 1万) ×(1 + 時間の核のレベル)。記憶は<b>記憶の木</b>（目覚まし時計のパネルか、一時停止の「記憶の木」）で、目覚めても残る強化に使える（ドアを開けたままにする、消去装置や生成機を自動にする など）。</p>
+      </div>
+    </section>
+
+    <section class="hsec">
+      <div class="hno">12</div>
       <div class="hbody">
         <h3>そのほか</h3>
         <p>ゲームを閉じている間も時間は消え続けていて、次に開いたときに受け取れる。まれに<b>時間が止まって</b>、10秒間すべて ×10 になる。部屋1の明るさは本当の時刻で変わる。部屋の物（時計・ベッド・ノートなど）は近づいて <kbd>E</kbd> で調べられる。進めると部屋が少しずつ変わる。実績・統計・このページは一時停止メニューから見られる。数字の表示（K・M・B や 万・億・兆）は設定で変えられる。</p>
@@ -997,7 +1079,7 @@
     <div class="kicker">PAUSED</div>
     <h2>一時停止</h2>
     <p>止まっている間も、時間は消え続けている。</p>
-    <div class="pause-links"><button id="btnHelpP" class="btn-line">あそびかた</button><button id="btnDreamP" class="btn-line">夢の木</button><button id="btnSettingsP" class="btn-line">設定</button><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
+    <div class="pause-links"><button id="btnHelpP" class="btn-line">あそびかた</button><button id="btnDreamP" class="btn-line">夢の木</button><button id="btnMemP" class="btn-line" style="display:none">記憶の木</button><button id="btnSettingsP" class="btn-line">設定</button><button id="btnAch" class="btn-line">実績</button><button id="btnStats" class="btn-line">統計</button></div>
     <div class="btns">
       <button id="btnToTitle" class="btn-ghost">タイトルへ</button>
       <button id="btnResume" class="btn-solid">再開</button>
@@ -1220,8 +1302,8 @@
         const prog = (d.tut || 0) < 6 ? 'チュートリアル中' : 'プレイ中';
         // セーブの数字は文字列（"1e+320" など）なので、0 より大きいかは Decimal で比べる
         const pos = (v) => { const x = toDec(v); return !!x && x.gt(0); };
-        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '') + (pos(d.le) || d.room2 ? `${fmtNum(d.le)}<small>le</small>` : '') + (pos(d.ted) || d.room3 ? `${fmtNum(d.ted)}<small>ted</small>` : '');
-        const lvTxt = (pos(d.yume) ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
+        const aiTxt = (pos(d.ai) || d.lv ? `${fmtNum(d.ai)}<small>ai</small>` : '') + (pos(d.me) || d.c3 ? `${fmtNum(d.me)}<small>me</small>` : '') + (pos(d.le) || d.room2 ? `${fmtNum(d.le)}<small>le</small>` : '') + (pos(d.ted) || d.room3 ? `${fmtNum(d.ted)}<small>ted</small>` : '') + (pos(d.mi) || d.room4 ? `${fmtNum(d.mi)}<small>mi</small>` : '');
+        const lvTxt = (pos(d.mem) ? `記憶 ${fmtNum(d.mem)}　` : '') + (pos(d.yume) ? `夢 ${fmtNum(d.yume)}　` : '') + (d.lv ? `装置1 Lv${d.lv}　` : '') + (d.c2 ? `装置2 Lv${d.lv2 || 0}　` : '') + (d.c3 ? `装置3 Lv${d.lv3 || 0}　` : '');
         b.innerHTML = `${no}<span class="info"><div class="main">${fmtNum(d.ti)}<small>ti</small>${fmtNum(d.de)}<small>de</small>${aiTxt}</div>` +
           `<div class="sub">${prog}　${lvTxt}${fmtDate(d.savedAt)}</div></span>` +
           `<span class="del" role="button" aria-label="削除" title="このセーブを削除">✕</span>`;
